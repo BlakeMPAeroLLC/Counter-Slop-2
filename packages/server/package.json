@@ -1,0 +1,27 @@
+{
+  "name": "@cs2/server",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "scripts": {
+    "dev": "pnpm --parallel --filter \"@cs2/server\" --filter \"@cs2/client\" dev",
+    "dev:server": "pnpm --filter @cs2/server dev",
+    "dev:client": "pnpm --filter @cs2/client dev",
+    "build": "pnpm --filter @cs2/client build",
+    "start": "pnpm --filter @cs2/server start",
+    "typecheck": "tsc --build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint .",
+    "check": "pnpm typecheck && pnpm lint && pnpm test"
+  },
+  "dependencies": {
+    "@cs2/protocol": "workspace:*",
+    "@cs2/sim": "workspace:*",
+    "ws": "^8.19.0"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.18.1"
+  }
+}
