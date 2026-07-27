@@ -40,9 +40,14 @@ const moveInput: MoveInput = {
 /**
  * Advances the world by exactly one tick.
  *
- * `cmds` is indexed by player slot. A null entry means that client's input did not arrive
- * in time; the server repeats the previous command rather than treating it as "no keys
- * pressed", because a dropped packet should not read as the player letting go of W.
+ * `cmds` is indexed by player slot. A null entry means no input is available at all for that
+ * slot, and is treated as "no keys pressed" — the player still falls, still takes damage,
+ * just does not act.
+ *
+ * Note that a *dropped packet* must not reach here as null: repeating a client's last
+ * command for a short window is what stops ordinary packet loss from reading as the player
+ * releasing W. That policy lives in the room (`MAX_COMMAND_REPEATS` in server/room.ts),
+ * not here, so the simulation stays a pure function of the commands it is handed.
  */
 export function step(world: World, cmds: readonly (Command | null)[]): void {
   world.events.length = 0

@@ -124,10 +124,17 @@ class MapBuilder {
 /**
  * `flat` — an empty floor with distant walls.
  *
- * Exists so that kinematics tests (acceleration, friction, counter-strafing, air-strafing,
- * jump arcs) measure only the solver and cannot accidentally collide with scenery. Tuning
- * assertions that silently fail because the test player walked into a crate are worse than
- * no assertions at all.
+ * Two jobs:
+ *
+ *  1. Kinematics tests (acceleration, friction, counter-strafing, air-strafing, jump arcs)
+ *     measure only the solver and cannot accidentally collide with scenery. A tuning
+ *     assertion that silently passes because the test player walked into a crate is worse
+ *     than no assertion.
+ *
+ *  2. Network integration tests get GUARANTEED line of sight between spawns. `dm_box` has an
+ *     L-shaped wall through the middle by design, so whether two spawns can see each other
+ *     there depends on which spawn the RNG picked — a genuinely nasty source of flakiness in
+ *     a hit-registration test.
  */
 export function buildFlatMap(): MapData {
   const b = new MapBuilder()
@@ -137,8 +144,13 @@ export function buildFlatMap(): MapData {
   b.brush(-R - 32, 0, R, R + 32, 512, R + 32, MATERIAL.CONCRETE)
   b.brush(-R - 32, 0, -R - 32, -R, 512, R + 32, MATERIAL.CONCRETE)
   b.brush(R, 0, -R - 32, R + 32, 512, R + 32, MATERIAL.CONCRETE)
-  b.spawn(0, 0, 0, -256, PI)
-  b.spawn(1, 0, 0, 256, 0)
+
+  // Facing rows 512 apart. Spread on X so several players do not stack on one point, and
+  // since the map is empty every pairing has clear line of sight regardless of RNG.
+  for (const x of [0, -128, 128, -256, 256]) {
+    b.spawn(0, x, 0, -256, PI)
+    b.spawn(1, x, 0, 256, 0)
+  }
   return b.build('flat')
 }
 

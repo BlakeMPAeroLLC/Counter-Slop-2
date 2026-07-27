@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Counter-Slop 2 — M0</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <canvas id="view"></canvas>
+
+    <!-- HUD is DOM, not in-engine. Vastly faster to build and iterate (docs/PLAN.md §3). -->
+    <div id="crosshair" hidden></div>
+
+    <div id="hud" hidden>
+      <div id="hud-left">
+        <span id="hp">100</span>
+        <span class="hud-label">HP</span>
+      </div>
+      <div id="hud-right">
+        <span id="ammo">30</span>
+        <span class="hud-label">/ 30</span>
+      </div>
+    </div>
+
+    <div id="hitmarker" hidden></div>
+    <div id="killfeed"></div>
+    <div id="scoreboard" hidden></div>
+
+    <!--
+      The latency panel is deliberately built BEFORE prediction exists (M1). You cannot tell
+      whether prediction helped unless you were already measuring what it was supposed to
+      fix. This is the instrument M0's exit gate is judged with.
+    -->
+    <div id="netgraph">
+      <div class="net-row"><span>rtt</span><b id="net-rtt">–</b></div>
+      <div class="net-row"><span>jitter</span><b id="net-jitter">–</b></div>
+      <div class="net-row"><span>input→pixel</span><b id="net-inputlag">–</b></div>
+      <div class="net-row"><span>snap/s</span><b id="net-snaps">–</b></div>
+      <div class="net-row"><span>cmd age</span><b id="net-ack">–</b></div>
+      <div class="net-row"><span>fps</span><b id="net-fps">–</b></div>
+      <canvas id="net-canvas" width="220" height="52"></canvas>
+    </div>
+
+    <div id="overlay">
+      <div id="panel">
+        <h1>Counter-Slop <span>2</span></h1>
+        <p class="tagline">M0 — netcode spike. Two capsules and a gun.</p>
+        <label for="name">Name</label>
+        <input id="name" maxlength="16" placeholder="player" autocomplete="off" />
+        <label for="room">Room</label>
+        <input id="room" maxlength="8" placeholder="DEFAULT" autocomplete="off" />
+        <button id="join">Connect</button>
+        <p id="status"></p>
+        <ul class="keys">
+          <li><kbd>WASD</kbd> move</li>
+          <li><kbd>Space</kbd> jump</li>
+          <li><kbd>Ctrl</kbd> crouch</li>
+          <li><kbd>Shift</kbd> walk quietly</li>
+          <li><kbd>Click</kbd> shoot</li>
+          <li><kbd>R</kbd> reload</li>
+          <li><kbd>Tab</kbd> scores</li>
+          <li><kbd>Esc</kbd> release mouse</li>
+        </ul>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

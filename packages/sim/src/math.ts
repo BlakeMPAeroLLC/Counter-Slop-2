@@ -87,7 +87,8 @@ function cosPoly(x: number): number {
  * keeps the full precision of the result.
  */
 const PI2_HI = 6.28125
-const PI2_LO = 0.0019353071795864769252867665590057684
+/** Nearest double to (true 2*PI - PI2_HI); PI2_HI + PI2_LO reproduces 2*PI exactly. */
+const PI2_LO = 0.001935307179586477
 
 /**
  * Deterministic sine. Range-reduces the argument into [0, PI/4] where the polynomials

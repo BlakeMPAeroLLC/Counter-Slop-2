@@ -1,0 +1,368 @@
+/*
+ * M0 HUD styling.
+ *
+ * The palette here is the beginning of the locked 12-colour system from docs/PLAN.md §8:
+ * team identity is a hue (Wreckers warm, Wardens cool), not a texture, so it stays readable
+ * at distance and in peripheral vision.
+ */
+
+:root {
+  --bg: #14161c;
+  --ink: #e8eaf0;
+  --dim: #8a90a2;
+  --wreckers: #ff8b3d;
+  --wardens: #2fd3c4;
+  --danger: #ff4d5e;
+  --panel: rgba(16, 18, 24, 0.92);
+  --mono: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+  --sans: ui-sans-serif, system-ui, "Inter", "Segoe UI", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+#view {
+  display: block;
+  width: 100vw;
+  height: 100vh;
+  cursor: none;
+}
+
+/* ── Crosshair ───────────────────────────────────────────────────────────── */
+
+#crosshair {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  width: 18px;
+  height: 18px;
+  margin: -9px 0 0 -9px;
+  pointer-events: none;
+  z-index: 10;
+}
+#crosshair::before,
+#crosshair::after {
+  content: '';
+  position: absolute;
+  background: #b6ff5c;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.75);
+}
+#crosshair::before {
+  left: 50%;
+  top: 0;
+  width: 2px;
+  height: 100%;
+  margin-left: -1px;
+}
+#crosshair::after {
+  top: 50%;
+  left: 0;
+  height: 2px;
+  width: 100%;
+  margin-top: -1px;
+}
+
+/* ── Health / ammo ───────────────────────────────────────────────────────── */
+
+#hud {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 24px;
+  display: flex;
+  justify-content: space-between;
+  padding: 0 40px;
+  pointer-events: none;
+  z-index: 10;
+  font-variant-numeric: tabular-nums;
+}
+
+#hud-left,
+#hud-right {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 10px 18px;
+  background: var(--panel);
+  border-radius: 4px;
+  border-bottom: 2px solid var(--wardens);
+}
+
+#hp,
+#ammo {
+  font: 700 34px/1 var(--mono);
+}
+
+#hp.low {
+  color: var(--danger);
+}
+
+.hud-label {
+  font: 600 12px/1 var(--sans);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+/* ── Hit feedback ────────────────────────────────────────────────────────── */
+
+#hitmarker {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  width: 26px;
+  height: 26px;
+  margin: -13px 0 0 -13px;
+  pointer-events: none;
+  z-index: 11;
+  background:
+    linear-gradient(45deg, transparent 44%, #fff 44%, #fff 56%, transparent 56%),
+    linear-gradient(-45deg, transparent 44%, #fff 44%, #fff 56%, transparent 56%);
+  opacity: 0;
+}
+#hitmarker.show {
+  animation: hit 180ms ease-out;
+}
+#hitmarker.headshot {
+  filter: drop-shadow(0 0 4px var(--danger));
+}
+@keyframes hit {
+  0% {
+    opacity: 1;
+    transform: scale(0.7);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.25);
+  }
+}
+
+/* ── Killfeed ────────────────────────────────────────────────────────────── */
+
+#killfeed {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-end;
+  pointer-events: none;
+  z-index: 10;
+}
+.kf {
+  background: var(--panel);
+  padding: 6px 12px;
+  border-radius: 3px;
+  font: 500 13px/1.3 var(--sans);
+  animation: kfIn 140ms ease-out;
+}
+.kf .hs {
+  color: var(--danger);
+  font-weight: 700;
+}
+.kf .t0 {
+  color: var(--wreckers);
+}
+.kf .t1 {
+  color: var(--wardens);
+}
+@keyframes kfIn {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+}
+
+/* ── Scoreboard ──────────────────────────────────────────────────────────── */
+
+#scoreboard {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  min-width: 380px;
+  background: var(--panel);
+  border-radius: 6px;
+  padding: 20px 24px;
+  z-index: 20;
+  font: 500 14px/1.6 var(--sans);
+}
+#scoreboard table {
+  width: 100%;
+  border-collapse: collapse;
+}
+#scoreboard th {
+  text-align: left;
+  font: 600 11px/1 var(--sans);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--dim);
+  padding-bottom: 8px;
+}
+#scoreboard td {
+  padding: 3px 0;
+  font-variant-numeric: tabular-nums;
+}
+#scoreboard td.num {
+  text-align: right;
+  font-family: var(--mono);
+}
+#scoreboard tr.me {
+  outline: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+/* ── Net graph ───────────────────────────────────────────────────────────── */
+
+#netgraph {
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  background: var(--panel);
+  border-radius: 4px;
+  padding: 10px 12px;
+  font: 500 11px/1.5 var(--mono);
+  color: var(--dim);
+  z-index: 15;
+  min-width: 220px;
+}
+.net-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+.net-row b {
+  color: var(--ink);
+  font-weight: 600;
+}
+.net-row b.warn {
+  color: #ffcc4d;
+}
+.net-row b.bad {
+  color: var(--danger);
+}
+#net-canvas {
+  display: block;
+  margin-top: 8px;
+  width: 220px;
+  height: 52px;
+  background: rgba(0, 0, 0, 0.35);
+  border-radius: 2px;
+}
+
+/* ── Connect overlay ─────────────────────────────────────────────────────── */
+
+#overlay {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(circle at 50% 40%, #1d212b 0%, #0d0f14 100%);
+  z-index: 100;
+}
+#overlay.hidden {
+  display: none;
+}
+
+#panel {
+  width: 340px;
+  padding: 32px;
+  background: var(--panel);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+#panel h1 {
+  margin: 0 0 4px;
+  font: 800 30px/1 var(--sans);
+  letter-spacing: -0.02em;
+}
+#panel h1 span {
+  color: var(--wreckers);
+}
+.tagline {
+  margin: 0 0 22px;
+  color: var(--dim);
+  font-size: 13px;
+}
+#panel label {
+  display: block;
+  font: 600 10px/1 var(--sans);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--dim);
+  margin: 12px 0 5px;
+}
+#panel input {
+  width: 100%;
+  padding: 9px 11px;
+  background: #0c0e13;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  color: var(--ink);
+  font: 500 14px/1 var(--mono);
+}
+#panel input:focus {
+  outline: none;
+  border-color: var(--wardens);
+}
+#join {
+  width: 100%;
+  margin-top: 20px;
+  padding: 11px;
+  background: var(--wardens);
+  color: #06231f;
+  border: 0;
+  border-radius: 4px;
+  font: 700 14px/1 var(--sans);
+  letter-spacing: 0.02em;
+  cursor: pointer;
+}
+#join:hover {
+  filter: brightness(1.08);
+}
+#join:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+#status {
+  min-height: 18px;
+  margin: 12px 0 0;
+  font: 500 12px/1.4 var(--mono);
+  color: var(--dim);
+}
+#status.error {
+  color: var(--danger);
+}
+.keys {
+  margin: 20px 0 0;
+  padding: 16px 0 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  list-style: none;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px 12px;
+  font-size: 11px;
+  color: var(--dim);
+}
+kbd {
+  display: inline-block;
+  min-width: 15px;
+  padding: 1px 5px;
+  background: #0c0e13;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 3px;
+  font: 600 10px/1.5 var(--mono);
+  color: var(--ink);
+}
