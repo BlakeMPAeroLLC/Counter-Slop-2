@@ -59,6 +59,27 @@ That also means a map authored for the playbook could later be extruded into rea
 `MapBuilder` brushes — `Region.floorY` and `Region.height` are populated with that in mind.
 Doing that extrusion is explicitly **not** in scope; the door is just left open.
 
+### These are real Counter-Strike coordinates
+
+The Dust 2 layout is calibrated against the game's own published radar constants, so playbook
+positions *are* world positions. Counter-Strike is Z-up, so its ground plane is (X, Y) with
++Y north, while this tool is Y-up with +z south. The two differ by one negated axis and
+nothing else:
+
+```
+x = X          z = -Y
+```
+
+`world.ts` holds that conversion plus the radar transform. `formatGetPos` turns any position
+into a `setpos` command, which the inspector shows for the selected waypoint or utility
+landing spot — click it to copy, paste it into a local server, and you are standing on the
+spot you drew. That is the intended way to correct a coordinate you think is wrong.
+
+`MapDef.radar` carries `pos_x` / `pos_y` / `scale`, so aligning against a radar image or
+importing positions out of a demo is arithmetic (`toRadarPixel`) rather than reverse
+engineering. `tests/world.test.ts` asserts the shipped geometry still agrees with the
+constants it claims to be calibrated to.
+
 ## Time
 
 Time is **integer ticks at 64 Hz**, matching `SIM.TICK_HZ`. Integers mean a play scrubs to
@@ -153,10 +174,31 @@ a red build rather than a confusing afternoon.
 
 ## Dust 2 accuracy, and the legal position
 
-The layout is hand-authored original geometry with community callout names. **No Valve asset
-was used and none may be added.** Distances are approximate — proportions and connectivity are
-right, exact measurements are not. Full provenance, and the trademark question that applies if
-this is ever published, is in [`ASSETS.md`](../ASSETS.md).
+The layout is hand-authored original geometry with community callout names. **No Valve map
+file, radar image, `.bsp`, `.vmf` or nav mesh was used, and none may be added.**
+
+What *was* used is a handful of published factual constants — the radar calibration
+(`pos_x -2476`, `pos_y 3239`, `scale 4.4`) and four normalised anchor positions for the spawns
+and bombsites. Those pin the map's true extent (world X ∈ [-2476, 2030], Y ∈ [-1267, 3239] — a
+4506-unit square) and the four points the geometry is fitted to.
+
+Two structural facts those anchors corrected, both of which an eyeballed layout gets backwards
+and both of which change how a play reads:
+
+- **Both bombsites are north of CT spawn** (A at Y 2518, B at 2698, CT spawn at 2293 between
+  and below them). CT spawn is not the top of the map; it is the hub you climb out of into
+  either site.
+- **The spawns are not aligned.** T spawn sits west of centre (X -719), CT spawn east of it
+  (X +318) — which is why the CT rotate to A is shorter than the rotate to B, and why T's
+  reach Tunnels before they reach Long.
+
+So: the extent, the anchors and the overall scale are right; everything between them is
+hand-placed, meaning connectivity and proportion are right while corridor widths and corner
+positions are approximate. A Long push takes about as long here as in game; a specific 40-unit
+lineup does not transfer. Fix a coordinate by walking it and reading `getpos`.
+
+Full provenance — including the sources deliberately rejected, and the trademark question that
+applies if this is ever published — is in [`ASSETS.md`](../ASSETS.md).
 
 ## What is deliberately not here
 

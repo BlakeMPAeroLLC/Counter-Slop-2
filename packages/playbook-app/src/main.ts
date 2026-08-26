@@ -296,19 +296,34 @@ async function boot(): Promise<void> {
   })
 
   // Panels re-render on state change; the canvas is driven by the frame loop instead.
+  //
+  // The timeline is the expensive one — one lane per actor, a bar per leg, a diamond per
+  // waypoint — so it is rebuilt only when its *contents* could have changed. That is an edit
+  // (revision) or a change of selection: lanes and diamonds render a highlight, so treating
+  // selection as playhead-only left the lane highlight showing the previously selected player.
   let lastRevision = -1
+  let lastStructural = ''
   subscribe(() => {
     renderToolRail(state)
     renderRoster(state)
     renderInspector(state)
     renderLayers(state)
     renderTopbar(state)
-    if (state.history.revision !== lastRevision) {
-      lastRevision = state.history.revision
+
+    const selectionKey = describeSelection(state)
+    const teamsKey = [...state.hiddenTeams].sort().join(',')
+    const structural = `${state.history.revision}|${selectionKey}|${teamsKey}`
+
+    if (structural !== lastStructural) {
+      lastStructural = structural
       renderTimeline(state)
-      scheduleAutosave(play(state))
     } else {
       updatePlayhead(state)
+    }
+
+    if (state.history.revision !== lastRevision) {
+      lastRevision = state.history.revision
+      scheduleAutosave(play(state))
     }
   })
 
@@ -317,6 +332,7 @@ async function boot(): Promise<void> {
   notify()
   renderTimeline(state)
   lastRevision = state.history.revision
+  lastStructural = `${state.history.revision}|${describeSelection(state)}|`
 
   // Fit on the first *observed* size rather than on the next animation frame. A frame
   // callback can still run before the timeline has been laid out, and fitting against a
@@ -374,6 +390,23 @@ async function boot(): Promise<void> {
   requestAnimationFrame(loop)
 
   toast('Press ? for shortcuts. Space plays, drag the timeline to scrub.')
+}
+
+/** Stable string identity for the current selection, for change detection. */
+function describeSelection(state: AppState): string {
+  const sel = state.selection
+  switch (sel.kind) {
+    case 'none':
+      return 'none'
+    case 'actor':
+      return `actor:${sel.actorId}`
+    case 'waypoint':
+      return `wp:${sel.actorId}:${sel.waypointId}`
+    case 'utility':
+      return `util:${sel.eventId}`
+    case 'annotation':
+      return `note:${sel.annotationId}`
+  }
 }
 
 /** The little readout under the canvas: hovered callout, plus any active leg note. */

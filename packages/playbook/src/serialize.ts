@@ -62,7 +62,9 @@ function vecOut(v: Vec2): Record<string, number> {
  * from showing up as a diff.
  */
 function round2(n: number): number {
-  return Math.round(n * 100) / 100
+  // `|| 0` collapses -0 to 0. Without it a coordinate dragged to exactly zero from the
+  // negative side serialises as `0` and reloads unequal to what was saved.
+  return Math.round(n * 100) / 100 || 0
 }
 
 

@@ -115,6 +115,35 @@ export interface SpawnPoint {
   readonly facing: number
 }
 
+/**
+ * The game's own radar overview calibration, for a map that corresponds to a real one.
+ *
+ * Counter-Strike ships a `resource/overviews/<map>.txt` next to each map giving the world
+ * coordinate of the radar image's upper-left corner and the world units per pixel. Recording
+ * it here does two things:
+ *
+ *   1. It pins the map's true world extent, so `getpos` in game and a position in this tool
+ *      are the same number rather than two different approximations.
+ *   2. It gives any future radar-alignment or demo-import work the transform it needs,
+ *      without that code having to rediscover these constants.
+ *
+ * Note these are *world* coordinates in the game's own frame, which is Z-up: the ground plane
+ * there is (X, Y) with +Y north. This tool is Y-up, so its ground plane is (x, z) with
+ * +z south. `world.ts` holds the conversion; it is a Y negation and nothing else.
+ */
+export interface RadarCalibration {
+  /** World X of the radar image's upper-left corner. */
+  readonly posX: number
+  /** World Y (north-positive) of the radar image's upper-left corner. */
+  readonly posY: number
+  /** World units per radar pixel. */
+  readonly scale: number
+  /** Radar image edge length in pixels. Square, 1024 for every stock map. */
+  readonly imageSize: number
+  /** Where these numbers came from, so the claim stays checkable. */
+  readonly source: string
+}
+
 export interface MapDef {
   readonly id: string
   readonly name: string
@@ -126,6 +155,8 @@ export interface MapDef {
   readonly spawns: readonly SpawnPoint[]
   /** Plant zones, keyed by site name. Used to snap the bomb and to check plant timings. */
   readonly bombsites: readonly Bombsite[]
+  /** Present when the layout is calibrated against a real map's overview config. */
+  readonly radar?: RadarCalibration
 }
 
 export interface Bombsite {

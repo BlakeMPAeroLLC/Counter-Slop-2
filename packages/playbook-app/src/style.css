@@ -405,6 +405,12 @@ select {
   padding: 4px 6px;
 }
 
+.num.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  cursor: pointer;
+}
+
 .note {
   width: 100%;
   min-height: 52px;

@@ -13,12 +13,14 @@ import {
   type MoveMode,
   type ResolvedTrack,
   type UtilityKind,
+  type Vec2,
   MODE_LABEL,
   RATES,
   SPEED,
   TEAM_COLOR,
   UTILITY,
   detonationTick,
+  formatGetPos,
   formatTick,
   resolveActor,
   seek,
@@ -190,6 +192,27 @@ function numberInput(value: number, onChange: (n: number) => void, step = 0.1): 
   return input
 }
 
+/**
+ * A read-only, click-to-copy `setpos` for a map position.
+ *
+ * The map is calibrated to the game's world coordinates, so this is a console command that
+ * actually teleports you to the spot being inspected. It is how you check a drawn position
+ * against the real map instead of arguing about it.
+ */
+function getPosField(label: string, at: Vec2): HTMLElement {
+  const command = formatGetPos(at)
+  const input = el('input', 'num mono')
+  input.value = command
+  input.readOnly = true
+  input.title = 'Click to copy, then paste into the game console to stand here'
+  input.addEventListener('focus', () => input.select())
+  input.addEventListener('click', () => {
+    input.select()
+    void navigator.clipboard?.writeText(command).catch(() => undefined)
+  })
+  return field(label, input, 'click to copy — paste into the game console')
+}
+
 export function renderInspector(state: AppState): void {
   const host = need('inspector')
   host.replaceChildren()
@@ -278,6 +301,8 @@ export function renderInspector(state: AppState): void {
       }
       host.append(speedNote)
     }
+
+    host.append(getPosField('Position', wp.at))
 
     const note = el('textarea', 'note')
     note.value = wp.note ?? ''
@@ -371,6 +396,9 @@ export function renderInspector(state: AppState): void {
         thrower === null || thrower === undefined ? 'Unattributed' : `Thrown by ${thrower.name}`,
       ),
     )
+
+    host.append(getPosField('Lands at', ev.to))
+    host.append(getPosField('Thrown from', ev.from))
 
     const note = el('textarea', 'note')
     note.value = ev.note ?? ''

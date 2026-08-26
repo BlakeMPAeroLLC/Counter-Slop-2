@@ -10,6 +10,7 @@
 export * from './types.js'
 export * from './units.js'
 export * from './geometry.js'
+export * from './world.js'
 export * from './camera.js'
 export * from './timeline.js'
 export * from './clock.js'

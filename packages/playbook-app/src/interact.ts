@@ -20,6 +20,7 @@ import {
   screenToWorld,
   seek,
   stepRate,
+  toWorld,
   togglePlaying,
   zoomAt,
 } from '@cs2/playbook'
@@ -352,7 +353,12 @@ function throwerAt(state: AppState): { actorId: string; at: Vec2 } | undefined {
 
 function updateHoverHint(state: AppState, host: InteractionHost, world: Vec2): void {
   const callout = nearestCallout(state, world)
-  const next = callout === null ? '' : callout
+  // Show the game's own coordinate alongside the callout. The map is calibrated to real world
+  // coordinates, so this number is directly checkable with `getpos` in a local server — which
+  // is the whole point of having calibrated it.
+  const w = toWorld(world)
+  const coords = `${Math.round(w.x)}, ${Math.round(w.y)}`
+  const next = callout === null ? coords : `${callout}  ·  ${coords}`
   if (next !== state.hint) {
     state.hint = next
     notify()

@@ -77,9 +77,14 @@ be exact, and the tool flags a pin that demands more speed than a player has. Pl
 
 It is a separate tool that shares the game's units and coordinate frame but deliberately does
 **not** run `packages/sim` — see [docs/PLAYBOOK.md](docs/PLAYBOOK.md) for why, and for what is
-deliberately absent (no line-of-sight, no collision). The Dust 2 layout is hand-authored
-original geometry with community callout names; provenance is in
-[ASSETS.md](ASSETS.md).
+deliberately absent (no line-of-sight, no collision).
+
+The Dust 2 layout is hand-authored original geometry with community callout names, calibrated
+against the game's published radar constants so that playbook positions *are* real world
+positions — the inspector hands you a `setpos` for any spot you select, so a coordinate you
+doubt can be checked by walking it. The extent and the four spawn/bombsite anchors are exact;
+what sits between them is hand-placed and approximate. Provenance, and the sources deliberately
+rejected, are in [ASSETS.md](ASSETS.md).
 
 ## Stack
 
