@@ -81,6 +81,35 @@ export default tseslint.config(
     },
   },
 
+  // ───────────────────────────────────────────────────────────────────────────
+  // Playbook core guard. `packages/playbook` is the DOM-free half of the 2D play
+  // simulator: pure data and pure functions. Keeping it browser-agnostic is what lets it
+  // be unit-tested under Vitest's `node` environment and, later, imported by the game
+  // client for an in-game minimap. Anything that needs the DOM belongs in
+  // `packages/playbook-app`.
+  //
+  // Note this is NOT the sim's determinism guard — `Date` and `Math.random` are perfectly
+  // fine here (ids, timestamps). A strat board never has to agree bit-for-bit with a
+  // server.
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    files: ['packages/playbook/src/**/*.ts'],
+    rules: {
+      'no-restricted-globals': [
+        'error',
+        { name: 'window', message: 'The playbook core must stay DOM-free. Put this in packages/playbook-app.' },
+        { name: 'document', message: 'The playbook core must stay DOM-free. Put this in packages/playbook-app.' },
+        { name: 'navigator', message: 'The playbook core must stay DOM-free. Put this in packages/playbook-app.' },
+        { name: 'localStorage', message: 'The playbook core must stay DOM-free. Put this in packages/playbook-app.' },
+        { name: 'fetch', message: 'The playbook core does no I/O. Inject a codec or pass data in.' },
+        {
+          name: 'CompressionStream',
+          message: 'Inject a Codec instead (see share.ts) so this stays testable under node.',
+        },
+      ],
+    },
+  },
+
   // Tests and tools may use whatever they like.
   {
     files: ['**/*.test.ts', '**/tests/**/*.ts', 'tools/**/*.ts'],

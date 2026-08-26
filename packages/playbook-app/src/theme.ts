@@ -1,0 +1,22 @@
+/** Palette. One place, so the map and the HUD cannot drift apart. */
+export const THEME = {
+  void: '#0d1014',
+  floor: '#252b33',
+  floorEdge: '#39424e',
+  choke: '#2f3945',
+  site: '#3a2f2c',
+  siteEdge: '#6b4a3f',
+  spawn: '#232f2a',
+  cover: '#4b5563',
+  coverEdge: '#69737f',
+  coverShort: '#3d4650',
+  grid: '#1a1f26',
+  callout: '#8b97a5',
+  calloutMajor: '#c3ccd6',
+  ink: '#e9edf2',
+  inkDim: '#7d8895',
+  accent: '#61d6c4',
+  warn: '#e8703a',
+  bomb: '#e04f4f',
+  dimAlpha: 0.22,
+} as const

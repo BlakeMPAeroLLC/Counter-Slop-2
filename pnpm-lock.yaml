@@ -49,6 +49,22 @@ importers:
         specifier: ^6.3.6
         version: 6.4.3(@types/node@22.20.1)(tsx@4.23.1)
 
+  packages/playbook:
+    devDependencies:
+      '@cs2/sim':
+        specifier: workspace:*
+        version: link:../sim
+
+  packages/playbook-app:
+    dependencies:
+      '@cs2/playbook':
+        specifier: workspace:*
+        version: link:../playbook
+    devDependencies:
+      vite:
+        specifier: ^6.3.6
+        version: 6.4.3(@types/node@22.20.1)(tsx@4.23.1)
+
   packages/protocol:
     dependencies:
       '@cs2/sim':

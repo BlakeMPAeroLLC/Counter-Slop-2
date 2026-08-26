@@ -1,0 +1,17 @@
+{
+  "name": "@cs2/playbook-app",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@cs2/playbook": "workspace:*"
+  },
+  "devDependencies": {
+    "vite": "^6.3.6"
+  }
+}

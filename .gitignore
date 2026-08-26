@@ -8,3 +8,10 @@ coverage/
 .env
 .env.local
 dist-types/
+
+# Playbook: scratch reference images used while hand-authoring map geometry. These must never
+# be committed — see ASSETS.md.
+packages/playbook-app/reference/
+
+# Exported plays dropped in the repo root by the browser's download.
+/*.play.json
