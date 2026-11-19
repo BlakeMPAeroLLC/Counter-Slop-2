@@ -214,6 +214,9 @@ $('game').addEventListener('click', relock)
 $('clickto').addEventListener('click', relock)
 $('modebtn').addEventListener('click', () => { if (ws) ws.send(JSON.stringify({ t: 'mode', m: game.m ? 0 : 1 })) })
 $('teambtn').addEventListener('click', () => { if (ws) ws.send(JSON.stringify({ t: 'team' })) })
+$('botadd').addEventListener('click', () => { if (ws) ws.send(JSON.stringify({ t: 'bot', op: 'add' })) })
+$('botdel').addEventListener('click', () => { if (ws) ws.send(JSON.stringify({ t: 'bot', op: 'remove' })) })
+$('botskill').addEventListener('change', () => { if (ws) ws.send(JSON.stringify({ t: 'bot', op: 'skill', v: Number($('botskill').value) })) })
 
 // ---------- networking ----------
 function connect(name) {
@@ -295,7 +298,7 @@ function onSnapshot(m) {
   actors.onSnapshot(m.p, now)
 
   for (const e of m.e) {
-    if (e.k === 'roster') { roster = e.players; drawScores() }
+    if (e.k === 'roster') { roster = e.players; drawScores(); $('botlbl').textContent = 'Bots: ' + roster.filter((r) => r.bot).length }
     else if (e.k === 'shot') {
       if (e.id === myId) continue // already shown by prediction
       const r = actors.remotes.get(e.id)
@@ -579,6 +582,7 @@ function updateHud(dt, specName) {
   }
   if (buyOpen) renderBuy()
 
+  if (hudCache.bs !== game.bs) { hudCache.bs = game.bs; $('botskill').value = String(game.bs ?? 1) }
   // menu mode controls
   if (hudCache.mode !== game.m) {
     hudCache.mode = game.m

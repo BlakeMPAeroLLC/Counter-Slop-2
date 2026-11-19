@@ -6,10 +6,11 @@ import path from 'node:path'
 import os from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { WebSocketServer } from 'ws'
-import { TICK, SNAP_HZ, WEAPONS, GUNS, DMG_MUL, RESPAWN_MS, RULES, SHOP, TEAM, MOVE } from '../shared/constants.js'
+import { TICK, SNAP_HZ, WEAPONS, GUNS, DMG_MUL, RESPAWN_MS, RULES, SHOP, TEAM, MOVE, SMOKE_MS } from '../shared/constants.js'
 import { MAP } from '../shared/map.js'
 import { rayWorld, rayPlayer, traceHull, lineOfSight, stepNade } from '../shared/physics.js'
-import { createState, spawnState, step, serialize, bestWeapon, eyeHeight } from '../shared/sim.js'
+import { createState, spawnState, step, serialize, eyeHeight } from '../shared/sim.js'
+import { buildNav, think, createBotState, BOT_NAMES, SKILLS } from './bots.js'
 
 const PORT = Number(process.env.PORT) || 3000
 const MAX_PLAYERS = 10
@@ -43,13 +44,19 @@ const players = new Map()
 const world = { boxes: MAP.boxes, sites: MAP.sites, bomb: null, dyn: [] }
 const staticWorld = { boxes: MAP.boxes }
 const nades = []
+// bots
+const nav = buildNav(MAP)
+const intel = [null, null, null] // last enemy sighting per team, shared between that team's bots
+const smokes = [] // active smoke clouds (bots cannot see through them)
+let botSkill = 1
+let botAcc = 0
 let nextId = 1
 let events = []
 let rosterDirty = false
 
 // ---------- match state ----------
 // bomb.st: 1 carried, 2 dropped, 3 planted, 4 defused, 5 exploded
-const G = { mode: 0, phase: 'live', phaseEnd: 0, liveAt: 0, round: 0, score: [0, 0, 0], streak: [0, 0, 0], bomb: null, plantedThisRound: false }
+const G = { mode: 0, phase: 'live', phaseEnd: 0, liveAt: 0, round: 0, score: [0, 0, 0], streak: [0, 0, 0], bomb: null, plantedThisRound: false, botSite: 0 }
 
 const all = () => [...players.values()]
 const team = (t) => all().filter((p) => p.state.team === t)
@@ -61,7 +68,7 @@ const clampMoney = (s) => { s.money = Math.max(0, Math.min(R.MAX_MONEY, s.money)
 function roster() {
   return {
     k: 'roster',
-    players: all().map((p) => ({ id: p.id, name: p.name, kills: p.kills, deaths: p.deaths, team: p.state.team, alive: p.state.alive ? 1 : 0, want: p.wantTeam || 0 })),
+    players: all().map((p) => ({ id: p.id, name: p.name, kills: p.kills, deaths: p.deaths, team: p.state.team, alive: p.state.alive ? 1 : 0, want: p.wantTeam || 0, bot: p.bot ? 1 : 0 })),
   }
 }
 
@@ -117,7 +124,9 @@ function loadoutPistol(p) {
 // ---------- bomb mode ----------
 function startMatch(by) {
   if (players.size < 2) { say('Need at least 2 players to start a bomb match.', by); return }
-  const order = all().sort(() => Math.random() - 0.5)
+  const mix = (l) => l.sort(() => Math.random() - 0.5)
+  // humans are split between the teams first, then bots fill in
+  const order = [...mix(all().filter((p) => !p.bot)), ...mix(all().filter((p) => p.bot))]
   // with an odd count the extra player defends: a lone attacker has better odds than a lone defender
   order.forEach((p, i) => { p.state.team = i % 2 === 0 ? TEAM.DEF : TEAM.ATT; p.wantTeam = 0 })
   G.mode = 1; G.round = 0; G.score = [0, 0, 0]; G.streak = [0, 0, 0]
@@ -134,6 +143,9 @@ function startRound() {
   G.plantedThisRound = false
   world.bomb = null
   nades.length = 0
+  smokes.length = 0
+  intel[1] = intel[2] = null
+  G.botSite = Math.floor(Math.random() * MAP.sites.length)
   const slots = [0, 0, 0]
   for (const p of players.values()) {
     const s = p.state
@@ -150,6 +162,8 @@ function startRound() {
     c.state.bomb = 1
     G.bomb = { st: 1, carrier: c.id, x: 0, y: 0, z: 0, explodeAt: 0 }
   } else G.bomb = { st: 0, carrier: 0, x: 0, y: 0, z: 0, explodeAt: 0 }
+  let k = Math.floor(Math.random() * 2)
+  for (const p of team(TEAM.DEF)) if (p.bot) p.bot.holdSite = k++ % 2 // defending bots split between the sites
   events.push({ k: 'rs', n: G.round })
   rosterDirty = true
 }
@@ -202,6 +216,7 @@ function nextRound() {
 function toDeathmatch(text) {
   G.mode = 0; G.phase = 'live'; G.bomb = null; world.bomb = null
   nades.length = 0
+  smokes.length = 0
   for (const p of players.values()) { loadoutDM(p); p.wantTeam = 0; spawn(p) }
   events.push({ k: 'mode', m: 0 })
   if (text) say(text)
@@ -360,6 +375,7 @@ function damage(victim, raw, attacker, w, part, at) {
   const head = part === 'head'
   if (attacker && attacker !== victim && part !== 'blast') { s.vx *= MOVE.TAG; s.vz *= MOVE.TAG }
   events.push({ k: 'hit', a: attacker ? attacker.id : 0, v: victim.id, dmg, head, p: at || [s.x, s.y + 40, s.z] })
+  if (victim.bot && attacker && attacker !== victim) alertBot(victim, attacker.state, 2500)
   if (s.hp > 0) return
   s.hp = 0; s.alive = 0; s.zoom = 0; s.act = 0; s.actT = 0
   victim.deaths++
@@ -375,8 +391,20 @@ function damage(victim, raw, attacker, w, part, at) {
 
 const hostile = (a, b) => a !== b && b.state.alive && (!a.state.team || a.state.team !== b.state.team)
 
+/** A bot turns toward something it heard or felt. */
+function alertBot(p, src, ms) {
+  const now = performance.now()
+  p.bot.alertYaw = Math.atan2(-(src.x - p.state.x), -(src.z - p.state.z))
+  p.bot.alertUntil = now + ms
+}
+
 function handleFire(shooter, e) {
   const W = WEAPONS[e.w]
+  if (e.w !== 0) {
+    for (const o of players.values()) {
+      if (o.bot && hostile(shooter, o) && Math.hypot(o.state.x - e.ox, o.state.z - e.oz) < 1100) alertBot(o, shooter.state, 1500)
+    }
+  }
   const wall = rayWorld(MAP.boxes, e.ox, e.oy, e.oz, e.dx, e.dy, e.dz, W.range)
   // bullets pass through thin cover at half damage (wood is easier than concrete or steel)
   let penFrom = Infinity, penTo = 0
@@ -418,6 +446,7 @@ function throwNade(p, e) {
 function detonate(n) {
   const W = WEAPONS[n.w]
   events.push({ k: 'nade', w: n.w, id: n.owner, p: [n.x, n.y, n.z] })
+  if (W.id === 'smoke') smokes.push({ x: n.x, z: n.z, until: performance.now() + SMOKE_MS })
   const owner = players.get(n.owner)
   if (W.id === 'he') {
     for (const p of all()) {
@@ -440,7 +469,7 @@ function detonate(n) {
       const cp = Math.cos(s.pitch)
       const facing = d < 1 ? 1 : (-Math.sin(s.yaw) * cp * dx + Math.sin(s.pitch) * dy - Math.cos(s.yaw) * cp * dz) / d
       const dur = 4.5 * (1 - d / 1500) * (facing > 0.5 ? 1 : facing > 0 ? 0.55 : 0.25)
-      if (dur > 0.3) send(p, { t: 'flash', d: dur })
+      if (dur > 0.3) { if (p.bot) p.bot.blindUntil = performance.now() + dur * 1000; else send(p, { t: 'flash', d: dur }) }
     }
   }
 }
@@ -464,6 +493,60 @@ function setDyn(self) {
   }
 }
 
+/** Simulate one command for a player and act on what it produced. Used for humans and bots alike. */
+function runCmd(p, cmd) {
+  const s = p.state
+  const ev = []
+  setDyn(p)
+  step(s, cmd, world, ev)
+  record(p)
+  for (const e of ev) {
+    if (e.k === 'fire') handleFire(p, e)
+    else if (e.k === 'reload') events.push({ k: 'reload', id: p.id })
+    else if (e.k === 'throw') throwNade(p, e)
+    else if (e.k === 'act') events.push({ k: 'act', id: p.id, a: e.a })
+  }
+  if (G.mode === 1) {
+    if (s.act === 1 && s.actT >= R.PLANT_TICKS) plant(p)
+    else if (s.act === 2 && s.actT >= (s.kit ? R.DEFUSE_KIT_TICKS : R.DEFUSE_TICKS)) defuse(p)
+  }
+}
+
+function newPlayer(ws, name, bot) {
+  const p = {
+    id: nextId++, ws, name, kills: 0, deaths: 0, state: createState(), lastSeq: 0, hist: [], view: {},
+    credit: 16, creditT: performance.now(), respawnAt: 0, wantTeam: 0, survived: false, slot: 0, bot,
+  }
+  players.set(p.id, p)
+  if (G.mode === 0) { loadoutDM(p); spawn(p) }
+  else {
+    // joining mid-match: go to the smaller team and wait for the next round
+    p.state.team = team(TEAM.ATT).length <= team(TEAM.DEF).length ? TEAM.ATT : TEAM.DEF
+    p.state.money = R.START_MONEY
+    loadoutPistol(p)
+    record(p)
+  }
+  rosterDirty = true
+  return p
+}
+
+const botList = () => all().filter((p) => p.bot)
+function addBot(by) {
+  if (players.size >= MAX_PLAYERS) { say('The server is full.', by); return }
+  const used = new Set(all().map((p) => p.name))
+  const name = 'Bot ' + (BOT_NAMES.find((n) => !used.has('Bot ' + n)) || nextId)
+  newPlayer({ readyState: 0, send() {} }, name, createBotState(botSkill))
+  say(`${name} joined (${SKILLS[botSkill]})`)
+}
+function removeBot() {
+  const p = botList().pop()
+  if (!p) return
+  if (p.state.bomb) dropBomb(p.state)
+  players.delete(p.id)
+  rosterDirty = true
+  say(`${p.name} left`)
+}
+
 wss.on('connection', (ws) => {
   ws._socket?.setNoDelay(true)
   let p = null
@@ -473,21 +556,8 @@ wss.on('connection', (ws) => {
     if (m.t === 'j' && !p) {
       if (players.size >= MAX_PLAYERS) { ws.send(JSON.stringify({ t: 'full' })); ws.close(); return }
       const name = String(m.name || 'Player').replace(/[^\w \-]/g, '').slice(0, 16) || 'Player'
-      p = {
-        id: nextId++, ws, name, kills: 0, deaths: 0, state: createState(), lastSeq: 0, hist: [], view: {},
-        credit: 16, creditT: performance.now(), respawnAt: 0, wantTeam: 0, survived: false, slot: 0,
-      }
-      players.set(p.id, p)
-      if (G.mode === 0) { loadoutDM(p); spawn(p) }
-      else {
-        // joining mid-match: go to the smaller team and wait for the next round
-        p.state.team = team(TEAM.ATT).length <= team(TEAM.DEF).length ? TEAM.ATT : TEAM.DEF
-        p.state.money = R.START_MONEY
-        loadoutPistol(p)
-        record(p)
-      }
+      p = newPlayer(ws, name, null)
       ws.send(JSON.stringify({ t: 'w', id: p.id, map: MAP.name }))
-      rosterDirty = true
       console.log(`+ ${name} joined (${players.size} online)`)
     } else if (!p) {
       return
@@ -497,7 +567,6 @@ wss.on('connection', (ws) => {
       const now = performance.now()
       p.credit = Math.min(p.credit + (now - p.creditT) * TICK / 1000, 48)
       p.creditT = now
-      const s = p.state
       for (const c of m.c) {
         if (!Array.isArray(c) || !(c[0] > p.lastSeq)) continue
         if (p.credit < 1) break
@@ -505,20 +574,7 @@ wss.on('connection', (ws) => {
         p.lastSeq = c[0]
         const yaw = Number(c[2]) || 0
         const pitch = Math.min(Math.max(Number(c[3]) || 0, -1.56), 1.56)
-        const ev = []
-        setDyn(p)
-        step(s, { b: c[1] | 0, yaw, pitch, sel: c[4] | 0 }, world, ev)
-        record(p)
-        for (const e of ev) {
-          if (e.k === 'fire') handleFire(p, e)
-          else if (e.k === 'reload') events.push({ k: 'reload', id: p.id })
-          else if (e.k === 'throw') throwNade(p, e)
-          else if (e.k === 'act') events.push({ k: 'act', id: p.id, a: e.a })
-        }
-        if (G.mode === 1) {
-          if (s.act === 1 && s.actT >= R.PLANT_TICKS) plant(p)
-          else if (s.act === 2 && s.actT >= (s.kit ? R.DEFUSE_KIT_TICKS : R.DEFUSE_TICKS)) defuse(p)
-        }
+        runCmd(p, { b: c[1] | 0, yaw, pitch, sel: c[4] | 0 })
       }
     } else if (m.t === 'buy') {
       buy(p, String(m.id))
@@ -531,6 +587,14 @@ wss.on('connection', (ws) => {
       p.wantTeam = 3 - cur === p.state.team ? 0 : 3 - cur
       say(p.wantTeam ? 'You will switch teams next round.' : 'Team switch cancelled.', p)
       rosterDirty = true
+    } else if (m.t === 'bot') {
+      if (m.op === 'add') addBot(p)
+      else if (m.op === 'remove') removeBot()
+      else if (m.op === 'skill') {
+        botSkill = Math.max(0, Math.min(2, m.v | 0))
+        for (const b of botList()) b.bot.skill = botSkill
+        say(`Bot difficulty: ${SKILLS[botSkill]}`)
+      }
     } else if (m.t === 'p') {
       ws.send(JSON.stringify({ t: 'p', c: m.c }))
     }
@@ -541,6 +605,8 @@ wss.on('connection', (ws) => {
     players.delete(p.id)
     rosterDirty = true
     console.log(`- ${p.name} left (${players.size} online)`)
+    // nobody left to play with: bots go back to idling in deathmatch
+    if (G.mode === 1 && !all().some((o) => !o.bot)) toDeathmatch()
   })
   ws.on('error', () => {})
 })
@@ -558,6 +624,25 @@ setInterval(() => {
     for (const p of players.values()) if (!p.state.alive && p.respawnAt && now >= p.respawnAt) spawn(p)
   } else tickBombMode(now)
   tickNades(now, dtMs)
+  for (let i = smokes.length - 1; i >= 0; i--) if (now >= smokes[i].until) smokes.splice(i, 1)
+
+  // bots think once per loop, then run as many simulation ticks as real time has advanced
+  const everyone = all()
+  if (everyone.some((p) => p.bot) && everyone.some((p) => !p.bot)) {
+    botAcc += dtMs
+    let n = Math.floor(botAcc / (1000 / TICK))
+    botAcc -= n * (1000 / TICK)
+    if (n > 8) n = 8
+    if (n > 0) {
+      const ctx = { now, dt: dtMs / 1000, players: everyone, byId: players, G, boxes: MAP.boxes, sites: MAP.sites, nav, intel, smokes, roam: MAP.spawns.dm }
+      for (const p of everyone) {
+        if (!p.bot) continue
+        const c = think(p.bot, p, ctx)
+        if (p.bot.wantBuy.length) { for (const id of p.bot.wantBuy) buy(p, id); p.bot.wantBuy.length = 0 }
+        for (let i = 0; i < n; i++) { runCmd(p, c); c.sel = -1 }
+      }
+    }
+  } else botAcc = 0
 
   if (rosterDirty) { events.push(roster()); rosterDirty = false }
   const list = all()
@@ -569,7 +654,7 @@ setInterval(() => {
   const b = G.bomb
   const canBuyPhase = G.mode === 1 && (G.phase === 'freeze' || (G.phase === 'live' && now - G.liveAt < R.BUY_MS))
   const g = {
-    m: G.mode, ph: G.phase, r: G.round, s: [G.score[1], G.score[2]], al: [aliveOn(TEAM.ATT), aliveOn(TEAM.DEF)],
+    m: G.mode, ph: G.phase, r: G.round, bs: botSkill, s: [G.score[1], G.score[2]], al: [aliveOn(TEAM.ATT), aliveOn(TEAM.DEF)],
     t: G.mode === 1 && (G.phase === 'freeze' || G.phase === 'live') ? Math.max(0, G.phaseEnd - now) : 0,
   }
   for (const p of list) {

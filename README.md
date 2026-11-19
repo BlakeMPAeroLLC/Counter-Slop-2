@@ -11,6 +11,10 @@ Two modes:
   defenders stop them or defuse it. Money for kills and round results, a buy menu, armour,
   grenades, half-time side swap, first to 7 rounds. Start it from the Esc menu (2+ players).
 
+**Bots:** open the Esc menu and use ADD BOT / REMOVE BOT, with Easy, Normal or Hard difficulty.
+Bots play both modes: they buy, take a site, plant, guard, retake and defuse. One player plus
+one bot is enough to start a bomb match. The bot logic is in `server/bots.js`.
+
 ## Host a game
 
 Needs [Node.js](https://nodejs.org) 20+ on the host PC only.

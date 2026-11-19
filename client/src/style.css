@@ -112,3 +112,8 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #0b0d10; col
 #modebox button { padding: 8px 12px; margin-right: 6px; font-size: 13px; font-weight: 700; letter-spacing: .08em; cursor: pointer;
   background: #2b3340; color: #fff; border: 1px solid #4a5666; border-radius: 3px; }
 #modebox button:hover { background: #3a4556; }
+#botrow { margin-top: 10px; display: flex; align-items: center; gap: 6px; font-size: 13px; }
+#botrow span { min-width: 58px; opacity: .85; }
+#botrow button { margin-right: 0; }
+#botrow select { padding: 7px 8px; background: #0b0d10; color: #fff; border: 1px solid #4a5666; border-radius: 3px; font-size: 13px; }
+.panel { max-height: 96vh; overflow-y: auto; }
