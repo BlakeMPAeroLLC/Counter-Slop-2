@@ -1,7 +1,15 @@
 # Breachline
 
-LAN free-for-all FPS that runs in the browser. Classic strafe movement (counter-strafing,
-air-strafing), movement-based accuracy, learnable spray patterns, authoritative server.
+LAN tactical shooter that runs in the browser. Classic strafe movement (counter-strafing,
+air-strafing, crouch-jumping), movement-based accuracy, learnable spray patterns, and an
+authoritative server.
+
+Two modes:
+
+- **Deathmatch** - the warm-up everyone joins into. Free-for-all, instant respawn, all weapons.
+- **Bomb match** - two teams, rounds, no respawns. Attackers plant the bomb at site A or B;
+  defenders stop them or defuse it. Money for kills and round results, a buy menu, armour,
+  grenades, half-time side swap, first to 7 rounds. Start it from the Esc menu (2+ players).
 
 ## Host a game
 
@@ -21,22 +29,24 @@ Change the port with `PORT=4000 npm start`.
 | Key | Action | Key | Action |
 |---|---|---|---|
 | WASD | Move | Space / mouse wheel | Jump |
-| Ctrl or C | Crouch | Shift | Walk (silent) |
-| Mouse 1 | Fire | Mouse 2 | Scope (sniper) |
-| 1-5 | Knife, pistol, SMG, rifle, sniper | R | Reload |
-| Tab | Scoreboard | Esc | Menu / sensitivity |
+| Ctrl or C | Crouch (in the air: crouch-jump) | Shift | Walk (silent) |
+| Mouse 1 | Fire / throw | Mouse 2 | Scope (sniper) |
+| 1 2 3 4 | Primary, pistol, knife, grenades | Q | Last weapon |
+| E (hold) | Plant / defuse the bomb | B | Buy menu (then a number) |
+| R | Reload | Tab / Esc | Scoreboard / menu |
 
 ## Layout
 
 | Path | What |
 |---|---|
 | `shared/` | Simulation run by both client and server: movement, collision, weapons, map |
-| `shared/constants.js` | Every tuning number (speeds, friction, recoil, damage) |
+| `shared/constants.js` | Every tuning number: movement, weapons, prices, round rules |
+| `shared/map.js` | The map (boxes), spawn points and bomb sites |
 | `server/index.js` | Game server + static file host |
 | `client/src/main.js` | Input, prediction, reconciliation, frame loop |
 | `client/src/gfx.js` | Renderer, lighting, world (procedural textures for now) |
 | `client/src/viewmodel.js` | First-person weapons. Set `MODEL_URLS` to load `.glb` models from `client/public/models/` |
-| `test/` | `npm test` - movement physics and an end-to-end two-player network test |
+| `test/` | `npm test` - movement, map and rules tests plus end-to-end matches against a real server |
 
 ## Assets
 

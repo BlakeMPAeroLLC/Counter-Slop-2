@@ -10,17 +10,34 @@
 <canvas id="game"></canvas>
 
 <div id="hud" class="hidden">
+  <div id="flashfx"></div>
   <div id="crosshair"><i class="t"></i><i class="b"></i><i class="l"></i><i class="r"></i></div>
   <div id="hitmarker"></div>
   <div id="scope" class="hidden"></div>
   <div id="vignette"></div>
-  <div id="killfeed"></div>
+
+  <div id="top" class="hidden">
+    <span id="sa" class="att">0</span>
+    <div id="clock"><b id="timer">0:00</b><small id="alive"></small></div>
+    <span id="sd" class="def">0</span>
+  </div>
+  <div id="modetag"></div>
+  <div id="banner"></div>
+  <div id="hint"></div>
+  <div id="progress" class="hidden"><div id="progfill"></div><span id="proglbl"></span></div>
+
+  <canvas id="radar" width="200" height="200"></canvas>
   <div id="net"></div>
-  <div id="health"><span class="lbl">HEALTH</span><b id="hp">100</b></div>
+  <div id="killfeed"></div>
+
+  <div id="health"><span class="lbl">HEALTH</span><b id="hp">100</b><span id="armor"></span></div>
+  <div id="money"></div>
   <div id="ammo"><span id="wname"></span><b id="clip">30</b></div>
   <div id="slots"></div>
+
   <div id="dead" class="hidden"><div id="deadmsg"></div><div id="deadsub"></div></div>
-  <div id="scoreboard" class="hidden"><h2>Scoreboard</h2><table><thead><tr><th>Player</th><th>Kills</th><th>Deaths</th></tr></thead><tbody id="scores"></tbody></table></div>
+  <div id="buy" class="hidden"></div>
+  <div id="scoreboard" class="hidden"><h2 id="sbtitle">Scoreboard</h2><table><thead><tr><th>Player</th><th>Team</th><th>Kills</th><th>Deaths</th></tr></thead><tbody id="scores"></tbody></table></div>
 </div>
 
 <div id="clickto" class="hidden"><div>CLICK TO PLAY</div><span>Esc for menu</span></div>
@@ -28,17 +45,23 @@
 <div id="menu">
   <div class="panel">
     <h1>BREACHLINE</h1>
-    <p class="sub">LAN free-for-all</p>
+    <p class="sub">LAN tactical shooter</p>
     <label>Name <input id="name" maxlength="16" autocomplete="off"></label>
     <label>Mouse sensitivity <input id="sens" type="number" step="0.1" min="0.1" max="20"></label>
     <button id="play">PLAY</button>
     <div id="status"></div>
+    <div id="modebox" class="hidden">
+      <span id="modelbl"></span>
+      <button id="modebtn"></button>
+      <button id="teambtn" class="hidden">SWITCH TEAM NEXT ROUND</button>
+    </div>
     <table class="keys">
       <tr><td>WASD</td><td>Move</td><td>Space / Wheel</td><td>Jump</td></tr>
-      <tr><td>Ctrl / C</td><td>Crouch</td><td>Shift</td><td>Walk (silent)</td></tr>
-      <tr><td>Mouse 1</td><td>Fire</td><td>Mouse 2</td><td>Scope (sniper)</td></tr>
-      <tr><td>1 - 5</td><td>Weapons</td><td>R</td><td>Reload</td></tr>
-      <tr><td>Tab</td><td>Scoreboard</td><td>Esc</td><td>Menu</td></tr>
+      <tr><td>Ctrl / C</td><td>Crouch (in air: crouch-jump)</td><td>Shift</td><td>Walk (silent)</td></tr>
+      <tr><td>Mouse 1</td><td>Fire / throw</td><td>Mouse 2</td><td>Scope (sniper)</td></tr>
+      <tr><td>1 2 3 4</td><td>Primary, pistol, knife, grenades</td><td>Q</td><td>Last weapon</td></tr>
+      <tr><td>E (hold)</td><td>Plant / defuse bomb</td><td>B</td><td>Buy menu</td></tr>
+      <tr><td>R</td><td>Reload</td><td>Tab / Esc</td><td>Scores / menu</td></tr>
     </table>
     <p class="tip">Stop before you shoot: tap the opposite strafe key to stop instantly.</p>
   </div>

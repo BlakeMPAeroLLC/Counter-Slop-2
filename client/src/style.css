@@ -72,3 +72,43 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #0b0d10; col
   background: rgba(5,6,8,.45); cursor: pointer; z-index: 5; }
 #clickto div { font-size: 34px; font-weight: 700; letter-spacing: .2em; color: #f2c14e; text-shadow: 0 2px 8px #000; }
 #clickto span { margin-top: 8px; opacity: .7; font-size: 14px; }
+
+/* ---- bomb mode HUD ---- */
+#flashfx { position: absolute; inset: 0; background: #fff; opacity: 0; }
+#top { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 14px;
+  background: rgba(8,10,13,.6); padding: 5px 16px; border-radius: 4px; text-shadow: 0 1px 3px #000; }
+#top > span { font-size: 30px; font-weight: 700; min-width: 30px; text-align: center; }
+.att { color: #ff8a3c; } .def { color: #5aa2ff; }
+#clock { text-align: center; min-width: 88px; }
+#clock b { display: block; font-size: 24px; line-height: 1.1; font-variant-numeric: tabular-nums; }
+#clock b.bomb { color: #ff4a3a; animation: blink .5s steps(2) infinite; }
+#clock b.freeze { color: #f2c14e; }
+#clock small { font-size: 12px; opacity: .8; letter-spacing: .08em; }
+@keyframes blink { 50% { opacity: .35; } }
+#modetag { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); font-size: 12px; letter-spacing: .2em; opacity: .7; text-shadow: 0 1px 3px #000; }
+#banner { position: absolute; top: 16%; left: 0; right: 0; text-align: center; font-size: 30px; font-weight: 700; letter-spacing: .06em;
+  text-shadow: 0 2px 8px #000; opacity: 0; transition: opacity .4s; }
+#banner small { display: block; font-size: 15px; font-weight: 400; letter-spacing: .04em; margin-top: 6px; opacity: .9; }
+#hint { position: absolute; top: 62%; left: 0; right: 0; text-align: center; font-size: 16px; color: #f2c14e; text-shadow: 0 1px 4px #000; }
+#progress { position: absolute; top: 67%; left: 50%; width: 300px; margin-left: -150px; height: 18px; background: rgba(0,0,0,.6); border: 1px solid rgba(255,255,255,.3); }
+#progfill { height: 100%; width: 0; background: #f2c14e; }
+#proglbl { position: absolute; inset: 0; text-align: center; font-size: 12px; line-height: 18px; letter-spacing: .14em; color: #fff; text-shadow: 0 1px 2px #000; }
+#radar { position: absolute; left: 12px; top: 12px; width: 190px; height: 190px; background: rgba(8,10,13,.55); border: 1px solid rgba(255,255,255,.18); border-radius: 4px; }
+#net { top: 210px; }
+#health #armor { display: block; font-size: 15px; color: #9fc4ff; margin-top: 2px; }
+#money { position: absolute; left: 28px; bottom: 122px; font-size: 22px; font-weight: 700; color: #7ddc6a; text-shadow: 0 1px 3px #000; }
+#buy { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); min-width: 380px; background: rgba(10,12,16,.9);
+  border: 1px solid rgba(255,255,255,.16); border-radius: 4px; padding: 14px 20px 16px; }
+#buy h3 { margin: 0 0 10px; font-size: 15px; letter-spacing: .14em; color: #f2c14e; display: flex; justify-content: space-between; }
+#buy h3 span { color: #7ddc6a; }
+#buy .row { display: flex; justify-content: space-between; padding: 5px 0; border-top: 1px solid rgba(255,255,255,.07); font-size: 15px; }
+#buy .row b { color: #f2c14e; width: 26px; display: inline-block; }
+#buy .row.no { opacity: .35; }
+#buy .foot { margin-top: 10px; font-size: 12px; opacity: .6; }
+#scoreboard td.att, #scoreboard td.def { font-weight: 600; }
+#scoreboard tr.deadrow td { opacity: .45; }
+#modebox { margin: 4px 0 12px; padding: 10px 12px; background: rgba(255,255,255,.05); border-radius: 4px; }
+#modelbl { display: block; font-size: 13px; margin-bottom: 8px; opacity: .85; }
+#modebox button { padding: 8px 12px; margin-right: 6px; font-size: 13px; font-weight: 700; letter-spacing: .08em; cursor: pointer;
+  background: #2b3340; color: #fff; border: 1px solid #4a5666; border-radius: 3px; }
+#modebox button:hover { background: #3a4556; }

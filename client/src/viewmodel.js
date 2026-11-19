@@ -70,6 +70,17 @@ function arm(g, x, y, z, rx, ry, len = 0.42) {
   g.add(a)
 }
 
+function nade(g, color, r) {
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(r, r, r * 2.6, 14), new THREE.MeshStandardMaterial({ color, roughness: 0.55, metalness: 0.3 }))
+  body.position.set(0, 0.03, -0.06)
+  const cap = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.45, r * 0.45, r * 0.9, 10), M.steel)
+  cap.position.set(0, 0.03 + r * 1.7, -0.06)
+  g.add(body, cap)
+  box(g, M.glove, 0.06, 0.06, 0.09, 0, 0, -0.03)
+  box(g, M.sleeve, 0.075, 0.075, 0.42, 0.03, -0.05, 0.2, 0.25, 0.2)
+  return [0, 0.03, -0.1]
+}
+
 const BUILD = {
   rifle(g) {
     box(g, M.metal, 0.042, 0.062, 0.3, 0, 0.03, -0.1)
@@ -131,6 +142,9 @@ const BUILD = {
     arm(g, -0.01, -0.03, -0.3, 0.30000000000000004, -0.68, 0.5)
     return [0, 0.045, -0.89]
   },
+  he(g) { return nade(g, 0x3a4a2a, 0.034) },
+  flash(g) { return nade(g, 0xb9bdc2, 0.028) },
+  smoke(g) { return nade(g, 0x5e6a72, 0.03) },
   knife(g) {
     box(g, M.dark, 0.026, 0.034, 0.11, 0, 0, 0.0)
     box(g, M.metal, 0.012, 0.06, 0.016, 0, 0, -0.06)
@@ -207,7 +221,7 @@ export function createViewModel(renderer) {
     scene, camera,
     resize(aspect) { camera.aspect = aspect; camera.updateProjectionMatrix() },
     fire(w) {
-      if (w === 0) { knifeSwing = 1; return }
+      if (w === 0 || w > 4) { knifeSwing = 1; return }
       kick = Math.min(kick + (w === 4 ? 0.09 : 0.035), 0.12)
       kickRot = Math.min(kickRot + (w === 4 ? 0.16 : 0.05), 0.2)
       flashT = 0.045

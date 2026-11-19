@@ -1,23 +1,15 @@
-// Sound effects: samples from client/public/sounds/, with synthesised fallbacks if a file is missing.
+// Sound effects: samples from client/public/sounds/<name>.ogg, with synthesised
+// fallbacks so every sound still plays if a file is missing.
 const FILES = ['rifle_shot', 'smg_shot', 'pistol_shot', 'sniper_shot', 'knife_swing', 'reload', 'draw',
-  'step1', 'step2', 'step3', 'step4', 'land', 'hit', 'headshot', 'hurt']
+  'step1', 'step2', 'step3', 'step4', 'land', 'hit', 'headshot', 'hurt',
+  'bomb_plant', 'bomb_beep', 'bomb_defuse', 'explosion', 'round_start', 'round_win', 'round_lose',
+  'nade_bounce', 'nade_throw', 'flashbang', 'smoke', 'buy', 'whiz']
 const SHOT_FILE = ['knife_swing', 'pistol_shot', 'smg_shot', 'rifle_shot', 'sniper_shot']
+
 export function createAudio() {
   let ctx = null, noiseBuf = null, master = null
   const listener = { x: 0, y: 0, z: 0, yaw: 0 }
   const buf = {}
-
-  /** Play a loaded sample. Returns false if it is not available (caller falls back to synth). */
-  function play(name, pos, vol, rateJitter = 0) {
-    const b = buf[name]
-    if (!b) return false
-    const src = ctx.createBufferSource()
-    src.buffer = b
-    src.playbackRate.value = 1 + (Math.random() - 0.5) * rateJitter
-    src.connect(out(pos, vol))
-    src.start()
-    return true
-  }
 
   function init() {
     if (ctx) { if (ctx.state === 'suspended') ctx.resume(); return }
@@ -34,14 +26,14 @@ export function createAudio() {
     }
   }
 
-  /** Returns an output node attenuated + panned for a world position (or centred if pos is null). */
-  function out(pos, vol) {
+  /** Output node attenuated + panned for a world position (centred and full volume if pos is null). */
+  function out(pos, vol, reach = 260) {
     const g = ctx.createGain()
     let pan = 0
     if (pos) {
       const dx = pos.x - listener.x, dz = pos.z - listener.z, dy = pos.y - listener.y
       const dist = Math.hypot(dx, dy, dz)
-      vol *= 1 / (1 + dist / 260)
+      vol *= 1 / (1 + dist / reach)
       const rx = Math.cos(listener.yaw), rz = -Math.sin(listener.yaw)
       pan = dist > 1 ? Math.max(-1, Math.min(1, (dx * rx + dz * rz) / dist)) * 0.85 : 0
     }
@@ -51,6 +43,18 @@ export function createAudio() {
       g.connect(p); p.connect(master)
     } else g.connect(master)
     return g
+  }
+
+  /** Play a loaded sample. Returns false if it is not available (caller falls back to synth). */
+  function play(name, pos, vol, jitter = 0, rate = 1, reach = 260) {
+    const b = buf[name]
+    if (!b) return false
+    const src = ctx.createBufferSource()
+    src.buffer = b
+    src.playbackRate.value = rate * (1 + (Math.random() - 0.5) * jitter)
+    src.connect(out(pos, vol, reach))
+    src.start()
+    return true
   }
 
   function noise(dest, t0, dur, freq, type, gain, q = 0.8) {
@@ -79,23 +83,47 @@ export function createAudio() {
     { lp: 1700, dur: 0.6, thump: 85, vol: 1.3 },
   ]
 
+  // synthesised stand-ins, keyed by sample name: (output node, start time)
+  const SYNTH = {
+    bomb_beep: (o, t) => tone(o, t, 0.09, 1900, 1900, 0.7, 'square'),
+    bomb_plant: (o, t) => { tone(o, t, 0.08, 900, 900, 0.5, 'square'); tone(o, t + 0.12, 0.08, 1200, 1200, 0.5, 'square'); tone(o, t + 0.24, 0.16, 1700, 1700, 0.5, 'square') },
+    bomb_defuse: (o, t) => { tone(o, t, 0.3, 1500, 500, 0.5, 'triangle'); noise(o, t + 0.28, 0.05, 2500, 'bandpass', 0.8, 3) },
+    explosion: (o, t) => { noise(o, t, 1.8, 700, 'lowpass', 1.6); noise(o, t, 0.25, 3000, 'lowpass', 1.0); tone(o, t, 1.3, 70, 24, 1.5) },
+    flashbang: (o, t) => { noise(o, t, 0.25, 2500, 'highpass', 1.2); tone(o, t, 0.5, 3300, 3100, 0.35) },
+    smoke: (o, t) => noise(o, t, 1.6, 3200, 'bandpass', 0.6, 0.6),
+    nade_bounce: (o, t) => { tone(o, t, 0.05, 950, 600, 0.5, 'triangle'); noise(o, t, 0.03, 3000, 'bandpass', 0.4, 2) },
+    nade_throw: (o, t) => noise(o, t, 0.16, 1100, 'bandpass', 0.6, 0.7),
+    round_start: (o, t) => { tone(o, t, 0.12, 520, 520, 0.4, 'triangle'); tone(o, t + 0.14, 0.2, 780, 780, 0.4, 'triangle') },
+    round_win: (o, t) => { tone(o, t, 0.14, 523, 523, 0.4, 'triangle'); tone(o, t + 0.15, 0.14, 659, 659, 0.4, 'triangle'); tone(o, t + 0.3, 0.3, 784, 784, 0.4, 'triangle') },
+    round_lose: (o, t) => { tone(o, t, 0.18, 440, 440, 0.4, 'triangle'); tone(o, t + 0.2, 0.18, 370, 370, 0.4, 'triangle'); tone(o, t + 0.4, 0.4, 294, 294, 0.4, 'triangle') },
+    buy: (o, t) => { noise(o, t, 0.04, 3200, 'bandpass', 0.8, 3); tone(o, t + 0.03, 0.08, 1300, 1700, 0.3, 'triangle') },
+    whiz: (o, t) => noise(o, t, 0.12, 2400, 'bandpass', 0.7, 4),
+  }
+
   return {
     init,
     setListener(x, y, z, yaw) { listener.x = x; listener.y = y; listener.z = z; listener.yaw = yaw },
-    shot(w, pos) {
+    /** Generic effect by sample name. opts: { rate, reach } - reach is how far it carries. */
+    sfx(name, pos, vol = 0.6, opts = {}) {
       if (!ctx) return
-      if (play(SHOT_FILE[w], pos, w === 0 ? 0.5 : w === 4 ? 1.1 : 0.8, 0.06)) return
+      if (play(name, pos, vol, 0, opts.rate || 1, opts.reach || 260)) return
+      const f = SYNTH[name]
+      if (f) f(out(pos, vol, opts.reach || 260), ctx.currentTime)
+    },
+    shot(w, pos) {
+      if (!ctx || w > 4) return
+      if (play(SHOT_FILE[w], pos, w === 0 ? 0.5 : w === 4 ? 1.1 : 0.8, 0.06, 1, 420)) return
       const t = ctx.currentTime
       if (w === 0) { noise(out(pos, 0.3), t, 0.12, 2500, 'bandpass', 0.6, 1.5); return }
-      const S = SHOT[w], o = out(pos, S.vol)
+      const S = SHOT[w], o = out(pos, S.vol, 420)
       noise(o, t, S.dur, S.lp, 'lowpass', 1.0)
       noise(o, t, 0.03, 6000, 'highpass', 0.5)
       tone(o, t, S.dur * 0.7, S.thump, S.thump * 0.3, 0.9)
     },
     step(pos, vol = 0.22) {
       if (!ctx) return
-      if (play('step' + (1 + Math.floor(Math.random() * 4)), pos, vol * 2.2, 0.12)) return
-      noise(out(pos, vol), ctx.currentTime, 0.07, 240 + Math.random() * 160, 'bandpass', 1.0, 1.2)
+      if (play('step' + (1 + Math.floor(Math.random() * 4)), pos, vol * 2.2, 0.12, 1, 200)) return
+      noise(out(pos, vol, 200), ctx.currentTime, 0.07, 240 + Math.random() * 160, 'bandpass', 1.0, 1.2)
     },
     land(pos) { if (ctx && !play('land', pos, 0.6)) { const o = out(pos, 0.4); noise(o, ctx.currentTime, 0.12, 180, 'lowpass', 1.0) } },
     reload(pos) {
@@ -114,5 +142,7 @@ export function createAudio() {
     },
     hurt() { if (ctx && !play('hurt', null, 0.7)) { const o = out(null, 0.5); tone(o, ctx.currentTime, 0.14, 160, 70, 0.9); noise(o, ctx.currentTime, 0.08, 900, 'lowpass', 0.5) } },
     kill() { if (ctx) { const o = out(null, 0.4), t = ctx.currentTime; tone(o, t, 0.1, 660, 660, 0.4, 'triangle'); tone(o, t + 0.09, 0.18, 990, 990, 0.4, 'triangle') } },
+    /** Ringing in the ears after a flashbang. */
+    ring(seconds) { if (ctx) tone(out(null, 0.35), ctx.currentTime, Math.max(0.4, seconds), 3600, 3500, 0.5) },
   }
 }

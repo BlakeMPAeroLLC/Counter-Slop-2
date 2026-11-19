@@ -179,7 +179,7 @@ export function createGfx(canvas, MAP) {
   renderer.autoClear = false
 
   const scene = new THREE.Scene()
-  scene.fog = new THREE.Fog(0xc4d2e0, 1400, 5200)
+  scene.fog = new THREE.Fog(0xc4d2e0, 2000, 7500)
   const camera = new THREE.PerspectiveCamera(FOV, 1, 2, 9000)
   camera.rotation.order = 'YXZ'
   scene.add(camera)
@@ -211,7 +211,7 @@ export function createGfx(canvas, MAP) {
   sun.castShadow = true
   sun.shadow.mapSize.set(4096, 4096)
   const sc = sun.shadow.camera
-  sc.left = -1250; sc.right = 1250; sc.top = 1250; sc.bottom = -1250; sc.near = 200; sc.far = 4200
+  sc.left = -2000; sc.right = 2000; sc.top = 2000; sc.bottom = -2000; sc.near = 200; sc.far = 7000
   sun.shadow.bias = -0.0004
   sun.shadow.normalBias = 1.2
   scene.add(sun)
@@ -229,7 +229,7 @@ export function createGfx(canvas, MAP) {
     let lat = (v - 0.5) * Math.PI
     const lon = (u - 0.5) * Math.PI * 2
     lat = Math.min(Math.max(lat, 0.5), 1.2)
-    sun.position.set(Math.cos(lon) * Math.cos(lat), Math.sin(lat), Math.sin(lon) * Math.cos(lat)).multiplyScalar(2200)
+    sun.position.set(Math.cos(lon) * Math.cos(lat), Math.sin(lat), Math.sin(lon) * Math.cos(lat)).multiplyScalar(3200)
     scene.background = tex
     scene.environment = tex
     scene.environmentIntensity = 1.15
@@ -239,6 +239,28 @@ export function createGfx(canvas, MAP) {
   }, undefined, () => console.warn('sky.hdr missing, keeping generated sky'))
 
   const mats = makeMaterials(renderer.capabilities.getMaxAnisotropy())
+  // painted bomb-site outlines
+  for (const letter of ['A', 'B']) {
+    const c = canvasTex(512, (g, n) => {
+      g.clearRect(0, 0, n, n)
+      const w = 26
+      g.save()
+      g.beginPath(); g.rect(0, 0, n, n); g.rect(w, w, n - 2 * w, n - 2 * w); g.clip('evenodd')
+      g.fillStyle = '#e8b800'; g.fillRect(0, 0, n, n)
+      g.fillStyle = '#1a1a1a'
+      for (let i = -n; i < n * 2; i += 56) { g.beginPath(); g.moveTo(i, 0); g.lineTo(i + 28, 0); g.lineTo(i + 28 - n, n); g.lineTo(i - n, n); g.fill() }
+      g.restore()
+      g.fillStyle = 'rgba(255,255,255,0.5)'
+      g.font = 'bold 300px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'
+      g.fillText(letter, n / 2, n / 2 + 16)
+    })
+    const map = new THREE.CanvasTexture(c)
+    map.colorSpace = THREE.SRGBColorSpace
+    map.anisotropy = renderer.capabilities.getMaxAnisotropy()
+    const m = new THREE.MeshStandardMaterial({ map, transparent: true, depthWrite: false, roughness: 1, polygonOffset: true, polygonOffsetFactor: -2 })
+    m.userData.scale = 0
+    mats['site' + letter] = m
+  }
   const groups = {}
   for (const b of MAP.boxes) (groups[b.mat] ||= []).push(boxGeo(b, mats[b.mat].userData.scale))
   for (const k in groups) {
@@ -250,7 +272,8 @@ export function createGfx(canvas, MAP) {
   for (const b of MAP.decor) (dg[b.mat] ||= []).push(boxGeo(b, mats[b.mat].userData.scale))
   for (const k in dg) {
     const mesh = new THREE.Mesh(mergeGeometries(dg[k]), mats[k])
-    mesh.receiveShadow = k === 'ground'
+    mesh.receiveShadow = k === 'ground' || k.startsWith('site')
+    if (k.startsWith('site')) mesh.renderOrder = 1
     scene.add(mesh)
   }
 

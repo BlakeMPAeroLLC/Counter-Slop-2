@@ -1,84 +1,125 @@
-// "Yard" - an original compact arena for ~3 players. Everything is axis-aligned boxes.
+// "Depot" - an original two-site bomb map. Everything is axis-aligned boxes.
+//
+//   north (-z)   [ SITE A ] [ defender spawn ] [ SITE B ]
+//                ---A main--------mid door--------B main---   <- front wall
+//                 west lane |  block  | mid |  block  | east lane
+//                           +--alley--+     +--alley--+
+//   south (+z)   [            attacker spawn                 ]
+//
+// Three routes: west lane -> A, east lane -> B, mid -> connector -> either site.
 const boxes = []
 const decor = []
 const B = (x0, y0, z0, x1, y1, z1, mat) => boxes.push({ x0, y0, z0, x1, y1, z1, mat })
 const D = (x0, y0, z0, x1, y1, z1, mat) => decor.push({ x0, y0, z0, x1, y1, z1, mat })
+const W = 1280
 
 // floor + perimeter
-B(-800, -16, -800, 800, 0, 800, 'ground')
-B(-832, 0, -832, 832, 288, -800, 'brick')
-B(-832, 0, 800, 832, 288, 832, 'brick')
-B(-832, 0, -800, -800, 288, 800, 'brick')
-B(800, 0, -800, 832, 288, 800, 'brick')
+B(-W, -16, -W, W, 0, W, 'ground')
+B(-W - 32, 0, -W - 32, W + 32, 320, -W, 'brick')
+B(-W - 32, 0, W, W + 32, 320, W + 32, 'brick')
+B(-W - 32, 0, -W, -W, 320, W, 'brick')
+B(W, 0, -W, W + 32, 320, W, 'brick')
 
-// centre platform with stairs north + south, a pillar and two low walls
-B(-144, 0, -144, 144, 64, 144, 'concrete')
-for (let k = 1; k <= 3; k++) {
-  B(-72, 0, 144 + (3 - k) * 24, 72, 16 * k, 144 + (4 - k) * 24, 'concrete')
-  B(-72, 0, -(144 + (4 - k) * 24), 72, 16 * k, -(144 + (3 - k) * 24), 'concrete')
+// the four building blocks between the lanes (an alley splits each pair)
+B(-820, 0, -380, -260, 300, 140, 'brick')
+B(-820, 0, 300, -260, 260, 820, 'concrete')
+B(260, 0, -380, 820, 260, 140, 'concrete')
+B(260, 0, 300, 820, 300, 820, 'brick')
+B(-560, 0, 150, -500, 60, 210, 'crate')
+B(520, 0, 230, 580, 60, 290, 'crate')
+
+// front wall with A main, mid door and B main
+B(-W, 0, -420, -1150, 200, -380, 'concrete')
+B(-950, 0, -420, -70, 200, -380, 'concrete')
+B(70, 0, -420, 950, 200, -380, 'concrete')
+B(1150, 0, -420, W, 200, -380, 'concrete')
+
+// walls between the sites and the connector, each with a back door and a front door
+for (const x of [-500, 460]) {
+  B(x, 0, -W, x + 40, 200, -1150, 'concrete')
+  B(x, 0, -1000, x + 40, 200, -640, 'concrete')
+  B(x, 0, -500, x + 40, 200, -420, 'concrete')
 }
-B(-28, 64, -28, 28, 176, 28, 'concrete')
-B(-144, 64, -144, -128, 104, 144, 'concrete')
-B(128, 64, -144, 144, 104, 144, 'concrete')
 
-// lane walls (doorway gap in the middle of each)
-B(-440, 0, -520, -408, 144, -110, 'brick')
-B(-440, 0, 110, -408, 144, 520, 'brick')
-B(408, 0, -520, 440, 144, -110, 'brick')
-B(408, 0, 110, 440, 144, 520, 'brick')
-// cross walls
-B(-200, 0, -470, 200, 112, -440, 'concrete')
-B(-200, 0, 440, 200, 112, 470, 'concrete')
+// connector / defender spawn
+B(-150, 0, -760, 150, 128, -720, 'concrete')
+B(-330, 0, -900, -270, 60, -840, 'crate')
+B(250, 0, -980, 310, 60, -920, 'crate')
 
-// NE tower + stairs + parapet
-B(520, 0, 520, 800, 128, 800, 'concrete')
-for (let k = 1; k <= 7; k++) B(520 - (8 - k) * 24, 0, 620, 520 - (7 - k) * 24, 16 * k, 740, 'concrete')
-B(520, 128, 520, 800, 160, 536, 'concrete')
-B(520, 128, 536, 536, 160, 620, 'concrete')
-B(520, 128, 740, 536, 160, 800, 'concrete')
-// SW tower (mirrored)
-B(-800, 0, -800, -520, 128, -520, 'concrete')
-for (let k = 1; k <= 7; k++) B(-520 + (7 - k) * 24, 0, -740, -520 + (8 - k) * 24, 16 * k, -620, 'concrete')
-B(-800, 128, -536, -520, 160, -520, 'concrete')
-B(-536, 128, -620, -520, 160, -536, 'concrete')
-B(-536, 128, -800, -520, 160, -740, 'concrete')
+// site A: ledge with stairs along the north wall, crates on site, container by A main
+B(-W, 0, -W, -940, 64, -1140, 'concrete')
+for (let k = 1; k <= 3; k++) B(-940 + (3 - k) * 24, 0, -W, -940 + (4 - k) * 24, 16 * k, -1140, 'concrete')
+B(-930, 0, -900, -866, 64, -836, 'crate')
+B(-866, 0, -900, -818, 44, -852, 'crate')
+B(-1010, 0, -760, -950, 60, -700, 'crate')
+B(-760, 0, -560, -640, 96, -520, 'concrete')
+B(-W, 0, -760, -1160, 120, -500, 'metalBlue')
 
-// containers with crate steps
-B(-700, 0, 420, -580, 120, 700, 'metalBlue')
-B(-580, 0, 560, -532, 48, 608, 'crate')
-B(-580, 0, 608, -532, 96, 656, 'crate')
-B(580, 0, -700, 700, 120, -420, 'metalRed')
-B(532, 0, -608, 580, 48, -560, 'crate')
-B(532, 0, -656, 580, 96, -608, 'crate')
+// site B: containers on site, raised corner with a crate step
+B(760, 0, -940, 1040, 120, -820, 'metalRed')
+B(1160, 0, -1100, W, 120, -820, 'metalBlue')
+B(1000, 0, -W, W, 80, -1140, 'concrete')
+B(940, 0, -1240, 1000, 44, -1180, 'crate')
+B(600, 0, -640, 660, 60, -580, 'crate')
+B(880, 0, -600, 940, 60, -540, 'crate')
+B(940, 0, -600, 988, 44, -552, 'crate')
 
-// loose crates
-B(-300, 0, -300, -236, 64, -236, 'crate')
-B(-236, 0, -300, -188, 48, -252, 'crate')
-B(236, 0, 236, 300, 64, 300, 'crate')
-B(188, 0, 252, 236, 48, 300, 'crate')
-B(280, 0, -80, 328, 48, -32, 'crate')
-B(-328, 0, 32, -280, 48, 80, 'crate')
-B(-640, 0, -40, -576, 64, 24, 'crate')
-B(576, 0, -24, 640, 64, 40, 'crate')
+// west lane
+B(-W, 0, 200, -1160, 120, 480, 'metalBlue')
+B(-900, 0, -60, -840, 60, 0, 'crate')
+B(-960, 0, -60, -900, 44, -12, 'crate')
+B(-1050, 0, -200, -820, 44, -170, 'concrete')
+B(-1100, 0, 620, -1040, 60, 680, 'crate')
+
+// mid
+B(-260, 0, -60, -60, 120, -30, 'concrete')
+B(120, 0, 180, 260, 44, 210, 'concrete')
+B(-40, 0, 420, 24, 60, 484, 'crate')
+B(24, 0, 440, 72, 44, 488, 'crate')
+B(140, 0, 600, 260, 120, 800, 'metalRed')
+
+// east lane
+B(1160, 0, -100, W, 120, 180, 'metalRed')
+B(840, 0, 300, 900, 60, 360, 'crate')
+B(900, 0, 312, 948, 44, 360, 'crate')
+B(820, 0, -200, 1050, 44, -170, 'concrete')
+B(1040, 0, 640, 1100, 60, 700, 'crate')
+
+// attacker spawn
+B(-140, 0, 880, 140, 128, 920, 'concrete')
+B(-600, 0, 1000, -540, 60, 1060, 'crate')
+B(520, 0, 940, 580, 60, 1000, 'crate')
+B(-1000, 0, 1160, -720, 120, W, 'metalBlue')
+
+const sites = [
+  { name: 'A', x0: -1080, x1: -700, z0: -1060, z1: -700 },
+  { name: 'B', x0: 700, x1: 1080, z0: -1060, z1: -700 },
+]
+// painted site outlines (render only)
+D(sites[0].x0, 0, sites[0].z0, sites[0].x1, 0.5, sites[0].z1, 'siteA')
+D(sites[1].x0, 0, sites[1].z0, sites[1].x1, 0.5, sites[1].z1, 'siteB')
 
 // render-only skyline outside the walls (gives parallax / depth)
-D(-1500, 0, -1400, -1100, 620, -1000, 'building')
-D(-900, 0, -1500, -500, 480, -1050, 'building')
-D(-200, 0, -1700, 300, 760, -1200, 'building')
-D(600, 0, -1450, 1000, 540, -1000, 'building')
-D(1100, 0, -900, 1500, 680, -400, 'building')
-D(1050, 0, 100, 1400, 460, 600, 'building')
-D(1000, 0, 900, 1500, 720, 1400, 'building')
-D(200, 0, 1100, 700, 520, 1500, 'building')
-D(-600, 0, 1050, -100, 640, 1500, 'building')
-D(-1500, 0, 600, -1050, 500, 1200, 'building')
-D(-1450, 0, -300, -1050, 580, 300, 'building')
-D(-3000, -20, -3000, 3000, -16, 3000, 'ground')
+D(-2300, 0, -2100, -1700, 720, -1500, 'building')
+D(-1400, 0, -2300, -800, 560, -1700, 'building')
+D(-300, 0, -2500, 400, 860, -1800, 'building')
+D(900, 0, -2200, 1500, 640, -1600, 'building')
+D(1700, 0, -1400, 2300, 780, -700, 'building')
+D(1650, 0, 100, 2200, 520, 800, 'building')
+D(1600, 0, 1400, 2300, 820, 2100, 'building')
+D(300, 0, 1700, 1000, 600, 2300, 'building')
+D(-900, 0, 1650, -200, 740, 2300, 'building')
+D(-2300, 0, 900, -1650, 580, 1700, 'building')
+D(-2250, 0, -500, -1650, 660, 400, 'building')
+D(-4500, -20, -4500, 4500, -16, 4500, 'ground')
 
-const spawnXZ = [
-  [-700, -200], [700, 200], [-200, 700], [200, -700],
-  [-640, 250], [640, -250], [0, -620], [0, 620],
-]
-const spawns = spawnXZ.map(([x, z]) => ({ x, y: 0.05, z, yaw: Math.atan2(x, z) }))
+const pt = (x, z, yaw) => ({ x, y: 0.05, z, yaw: yaw === undefined ? Math.atan2(x, z) : yaw })
+const spawns = {
+  att: [pt(-160, 1160, 0), pt(0, 1190, 0), pt(160, 1160, 0), pt(-80, 1060, 0), pt(80, 1060, 0), pt(-260, 1080, 0), pt(260, 1080, 0)],
+  def: [pt(-160, -1160, Math.PI), pt(0, -1190, Math.PI), pt(160, -1160, Math.PI), pt(-80, -1080, Math.PI), pt(80, -1080, Math.PI),
+    pt(-260, -1100, Math.PI), pt(260, -1100, Math.PI)],
+  dm: [pt(-1100, 760), pt(1100, 760), pt(0, 620), pt(-1050, -260), pt(1080, -280), pt(100, -200), pt(-1100, -900), pt(700, -620),
+    pt(0, -1000), pt(-640, 220), pt(640, 180), pt(0, 1100), pt(1100, -1000), pt(-640, -1100)],
+}
 
-export const MAP = { name: 'Yard', boxes, decor, spawns }
+export const MAP = { name: 'Depot', size: W, boxes, decor, spawns, sites }
