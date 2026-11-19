@@ -274,45 +274,61 @@ export function createEffects(scene, world) {
   const holeGeo = new THREE.PlaneGeometry(5, 5)
   const holes = []
   let holeI = 0
-  // particles: small soft dots (round, not squares)
-  const MAXP = 1000
-  const pPos = new Float32Array(MAXP * 3), pCol = new Float32Array(MAXP * 3)
-  const pVel = new Float32Array(MAXP * 3), pLife = new Float32Array(MAXP)
-  const pGeo = new THREE.BufferGeometry()
-  pGeo.setAttribute('position', new THREE.BufferAttribute(pPos, 3))
-  pGeo.setAttribute('color', new THREE.BufferAttribute(pCol, 3))
-  const points = new THREE.Points(pGeo, new THREE.PointsMaterial({
-    size: 2.4, map: softDot('rgba(255,255,255,1)', 'rgba(255,255,255,0)'), vertexColors: true, transparent: true, alphaTest: 0.08, depthWrite: false,
-  }))
-  points.frustumCulled = false
-  scene.add(points)
-  let pI = 0
-  for (let i = 0; i < MAXP; i++) pPos[i * 3 + 1] = -9999
-
-  function burst(x, y, z, nx, ny, nz, n, r, g, b, spd, life = 1) {
-    for (let k = 0; k < n; k++) {
-      const i = pI; pI = (pI + 1) % MAXP
-      pPos[i * 3] = x; pPos[i * 3 + 1] = y; pPos[i * 3 + 2] = z
-      pVel[i * 3] = (nx + (Math.random() - 0.5) * 1.3) * spd * Math.random()
-      pVel[i * 3 + 1] = (ny + (Math.random() - 0.3) * 1.3) * spd * Math.random()
-      pVel[i * 3 + 2] = (nz + (Math.random() - 0.5) * 1.3) * spd * Math.random()
-      const s = 0.7 + Math.random() * 0.3
-      pCol[i * 3] = r * s; pCol[i * 3 + 1] = g * s; pCol[i * 3 + 2] = b * s
-      pLife[i] = (0.35 + Math.random() * 0.3) * life
+  // particles: soft round dots. Two pools: fine debris, and large embers / dust for explosions.
+  const dotTex = softDot('rgba(255,255,255,1)', 'rgba(255,255,255,0)')
+  function makeParticles(size, max) {
+    const pos = new Float32Array(max * 3), col = new Float32Array(max * 3), vel = new Float32Array(max * 3), life = new Float32Array(max)
+    const geo = new THREE.BufferGeometry()
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
+    geo.setAttribute('color', new THREE.BufferAttribute(col, 3))
+    const pts = new THREE.Points(geo, new THREE.PointsMaterial({ size, map: dotTex, vertexColors: true, transparent: true, alphaTest: 0.08, depthWrite: false }))
+    pts.frustumCulled = false
+    scene.add(pts)
+    for (let i = 0; i < max; i++) pos[i * 3 + 1] = -9999
+    let next = 0
+    return {
+      burst(x, y, z, nx, ny, nz, n, r, g, b, spd, lifeMul = 1) {
+        for (let k = 0; k < n; k++) {
+          const i = next; next = (next + 1) % max
+          pos[i * 3] = x; pos[i * 3 + 1] = y; pos[i * 3 + 2] = z
+          vel[i * 3] = (nx + (Math.random() - 0.5) * 1.3) * spd * Math.random()
+          vel[i * 3 + 1] = (ny + (Math.random() - 0.3) * 1.3) * spd * Math.random()
+          vel[i * 3 + 2] = (nz + (Math.random() - 0.5) * 1.3) * spd * Math.random()
+          const s = 0.7 + Math.random() * 0.3
+          col[i * 3] = r * s; col[i * 3 + 1] = g * s; col[i * 3 + 2] = b * s
+          life[i] = (0.35 + Math.random() * 0.3) * lifeMul
+        }
+      },
+      update(dt) {
+        for (let i = 0; i < max; i++) {
+          if (life[i] <= 0) continue
+          life[i] -= dt
+          if (life[i] <= 0) { pos[i * 3 + 1] = -9999; continue }
+          vel[i * 3 + 1] -= 500 * dt
+          pos[i * 3] += vel[i * 3] * dt; pos[i * 3 + 1] += vel[i * 3 + 1] * dt; pos[i * 3 + 2] += vel[i * 3 + 2] * dt
+          if (pos[i * 3 + 1] < 0.5 && vel[i * 3 + 1] < 0) { pos[i * 3 + 1] = 0.5; vel[i * 3] *= 0.5; vel[i * 3 + 1] *= -0.3; vel[i * 3 + 2] *= 0.5 }
+        }
+        geo.attributes.position.needsUpdate = true
+        geo.attributes.color.needsUpdate = true
+      },
     }
   }
+  const fine = makeParticles(2.4, 500)
+  const coarse = makeParticles(12, 600)
+  const burst = fine.burst
 
   // fireballs / flashes
   const glowTex = softDot('rgba(255,235,190,1)', 'rgba(255,120,20,0)')
   const glows = []
-  function glow(x, y, z, from, to, time, color) {
+  const lightPool = [0, 1].map(() => { const l = new THREE.PointLight(0xffffff, 0, 100, 1); scene.add(l); return l })
+  function glow(x, y, z, from, to, time, color, peak, reach) {
     const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, fog: false }))
     s.position.set(x, y, z)
     scene.add(s)
-    const light = new THREE.PointLight(color, to * 6, to * 5, 1)
-    light.position.set(x, y + 20, z)
-    scene.add(light)
-    glows.push({ s, light, from, to, time, age: 0, peak: to * 6 })
+    // lights come from a fixed pool: adding a light at runtime would recompile every shader (a visible hitch)
+    const light = lightPool.find((l) => !l.userData.busy) || null
+    if (light) { light.userData.busy = true; light.color.set(color); light.distance = reach; light.position.set(x, y + 20, z) }
+    glows.push({ s, light, from, to, time, age: 0, peak })
   }
 
   // grenades in flight
@@ -320,7 +336,14 @@ export function createEffects(scene, world) {
   const nadeGeo = new THREE.SphereGeometry(3, 10, 8)
   const nadeMat = { 5: 0x3a4a2a, 6: 0xb9bdc2, 7: 0x5e6a72 }
   // smoke clouds
-  const smokeTex = softDot('rgba(255,255,255,0.9)', 'rgba(255,255,255,0)')
+  const smokeTex = (() => {
+    const c = document.createElement('canvas'); c.width = c.height = 64
+    const g = c.getContext('2d')
+    const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32)
+    gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.55, 'rgba(255,255,255,0.9)'); gr.addColorStop(1, 'rgba(255,255,255,0)')
+    g.fillStyle = gr; g.fillRect(0, 0, 64, 64)
+    return new THREE.CanvasTexture(c)
+  })()
   const smokes = []
 
   // the bomb (dropped or planted)
@@ -369,16 +392,16 @@ export function createEffects(scene, world) {
     },
     blood(x, y, z) { burst(x, y, z, 0, 0.4, 0, 14, 0.65, 0.03, 0.03, 110) },
     explosion(x, y, z, big) {
-      burst(x, y + 12, z, 0, 0.8, 0, big ? 220 : 70, 1.0, 0.55, 0.12, big ? 900 : 420, big ? 2.2 : 1.3)
-      burst(x, y + 12, z, 0, 1, 0, big ? 160 : 50, 0.22, 0.2, 0.18, big ? 650 : 320, big ? 3 : 1.8)
-      glow(x, y + 30, z, big ? 200 : 80, big ? 1300 : 420, big ? 0.7 : 0.35, 0xffb060)
+      coarse.burst(x, y + 12, z, 0, 0.8, 0, big ? 200 : 60, 1.0, 0.5, 0.1, big ? 900 : 420, big ? 2.4 : 1.4)
+      coarse.burst(x, y + 12, z, 0, 1, 0, big ? 160 : 50, 0.2, 0.18, 0.16, big ? 650 : 320, big ? 3.2 : 2)
+      glow(x, y + 30, z, big ? 120 : 40, big ? 520 : 160, big ? 0.7 : 0.35, 0xffb060, big ? 5000 : 1200, big ? 3500 : 900)
     },
-    flashPop(x, y, z) { glow(x, y + 8, z, 60, 380, 0.22, 0xffffff) },
+    flashPop(x, y, z) { glow(x, y + 8, z, 30, 150, 0.22, 0xffffff, 2500, 1500) },
     smoke(x, y, z) {
       const g = new THREE.Group()
       g.position.set(x, y, z)
       const puffs = []
-      for (let i = 0; i < 26; i++) {
+      for (let i = 0; i < 40; i++) {
         const m = new THREE.SpriteMaterial({ map: smokeTex, color: 0xb4b8bb, transparent: true, opacity: 0, depthWrite: false, rotation: Math.random() * 6.28 })
         const s = new THREE.Sprite(m)
         const a = Math.random() * 6.28, r = Math.sqrt(Math.random()) * 95
@@ -424,15 +447,8 @@ export function createEffects(scene, world) {
         t.m.material.opacity = Math.max(0, t.life / 0.07) * 0.55
         if (t.life <= 0) { scene.remove(t.m); t.m.material.dispose(); tracers.splice(i, 1) }
       }
-      for (let i = 0; i < MAXP; i++) {
-        if (pLife[i] <= 0) continue
-        pLife[i] -= dt
-        if (pLife[i] <= 0) { pPos[i * 3 + 1] = -9999; continue }
-        pVel[i * 3 + 1] -= 500 * dt
-        pPos[i * 3] += pVel[i * 3] * dt; pPos[i * 3 + 1] += pVel[i * 3 + 1] * dt; pPos[i * 3 + 2] += pVel[i * 3 + 2] * dt
-      }
-      pGeo.attributes.position.needsUpdate = true
-      pGeo.attributes.color.needsUpdate = true
+      fine.update(dt)
+      coarse.update(dt)
 
       for (let i = glows.length - 1; i >= 0; i--) {
         const g = glows[i]
@@ -441,8 +457,12 @@ export function createEffects(scene, world) {
         const sc = g.from + (g.to - g.from) * Math.sqrt(k)
         g.s.scale.set(sc, sc, 1)
         g.s.material.opacity = 1 - k
-        g.light.intensity = g.peak * (1 - k)
-        if (k >= 1) { scene.remove(g.s); scene.remove(g.light); g.s.material.dispose(); glows.splice(i, 1) }
+        if (g.light) g.light.intensity = g.peak * (1 - k)
+        if (k >= 1) {
+          scene.remove(g.s); g.s.material.dispose()
+          if (g.light) { g.light.intensity = 0; g.light.userData.busy = false }
+          glows.splice(i, 1)
+        }
       }
 
       for (let i = nades.length - 1; i >= 0; i--) {
@@ -462,7 +482,7 @@ export function createEffects(scene, world) {
         const s = smokes[i]
         s.age += dt
         const k = Math.max(0, Math.min(1, s.age / 1.2) * Math.min(1, (life - s.age) / 2.5))
-        for (const p of s.puffs) { p.m.opacity = 0.62 * k; p.m.rotation += p.spin * dt }
+        for (const p of s.puffs) { p.m.opacity = 0.9 * k; p.m.rotation += p.spin * dt }
         if (s.age > life) { scene.remove(s.g); for (const p of s.puffs) p.m.dispose(); smokes.splice(i, 1) }
       }
 

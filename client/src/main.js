@@ -700,7 +700,7 @@ if (AUTO) {
   connect(AUTO)
   // test hooks for automated checks
   window.__game = {
-    state, keys, actors, world,
+    state, keys, actors, world, fx,
     game: () => game,
     send: (o) => ws.send(JSON.stringify(o)),
     look: (y, p) => { yaw = y; pitch = p },
