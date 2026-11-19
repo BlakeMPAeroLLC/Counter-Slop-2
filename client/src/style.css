@@ -67,3 +67,8 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #0b0d10; col
 .keys { width: 100%; font-size: 12.5px; border-collapse: collapse; opacity: .85; }
 .keys td { padding: 3px 0; } .keys td:nth-child(odd) { color: #f2c14e; width: 24%; }
 .tip { font-size: 12.5px; opacity: .6; margin: 14px 0 0; }
+
+#clickto { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  background: rgba(5,6,8,.45); cursor: pointer; z-index: 5; }
+#clickto div { font-size: 34px; font-weight: 700; letter-spacing: .2em; color: #f2c14e; text-shadow: 0 2px 8px #000; }
+#clickto span { margin-top: 8px; opacity: .7; font-size: 14px; }

@@ -95,47 +95,79 @@ window.addEventListener('mousemove', (e) => {
 })
 window.addEventListener('beforeunload', (e) => { if (active) { e.preventDefault(); e.returnValue = '' } })
 
-async function lockPointer() {
+// Mouse capture. Browsers only allow it as the direct result of a click, so it is requested
+// synchronously inside click handlers (never after an await). If it is refused, a
+// "click to play" overlay stays up and the next click tries again.
+let rawInput = store.get('rawInput', '1') === '1'
+function lockPointer() {
   const el = $('game')
-  try {
-    // raw input: bypasses OS mouse acceleration where the browser supports it
-    const p = el.requestPointerLock({ unadjustedMovement: true })
-    if (p && p.catch) await p.catch(() => el.requestPointerLock())
-  } catch { try { el.requestPointerLock() } catch {} }
+  let p
+  try { p = el.requestPointerLock(rawInput ? { unadjustedMovement: true } : undefined) } catch (e) { p = Promise.reject(e) }
+  if (p && p.catch) {
+    p.catch((e) => {
+      // raw input unsupported on this machine: fall back to normal input from the next click on
+      if (rawInput && e && e.name === 'NotSupportedError') {
+        rawInput = false
+        store.set('rawInput', '0')
+        try { const q = el.requestPointerLock(); if (q && q.catch) q.catch(() => {}) } catch {}
+      }
+      showClickTo()
+    })
+  }
+}
+function showClickTo() {
+  if (AUTO || document.pointerLockElement === $('game')) return
+  if (joined && $('menu').classList.contains('hidden')) $('clickto').classList.remove('hidden')
 }
 document.addEventListener('pointerlockchange', () => {
   if (AUTO) return
-  active = document.pointerLockElement === $('game')
-  $('menu').classList.toggle('hidden', active)
-  if (!active) { keys.clear(); mouseB = 0; $('play').textContent = joined ? 'RESUME' : 'PLAY' }
+  const locked = document.pointerLockElement === $('game')
+  active = locked
+  $('clickto').classList.add('hidden')
+  if (locked) $('menu').classList.add('hidden')
+  else {
+    keys.clear(); mouseB = 0
+    $('play').textContent = joined ? 'RESUME' : 'PLAY'
+    $('menu').classList.remove('hidden')
+  }
 })
+document.addEventListener('pointerlockerror', showClickTo)
 
-$('play').addEventListener('click', async () => {
+$('play').addEventListener('click', () => {
   audio.init()
   store.set('name', $('name').value)
   if (!joined) connect($('name').value)
-  // fullscreen + keyboard lock stops Ctrl+W from closing the tab mid-crouch (Chrome / Edge)
-  try { await document.documentElement.requestFullscreen(); await navigator.keyboard?.lock?.() } catch {}
+  $('menu').classList.add('hidden')
+  // both requests happen right here, inside the click
   lockPointer()
+  if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
+    // keyboard lock (fullscreen only) stops Ctrl+W from closing the tab mid-crouch in Chrome / Edge
+    document.documentElement.requestFullscreen().then(() => navigator.keyboard?.lock?.()).catch(() => {})
+  }
+  setTimeout(showClickTo, 400)
 })
-$('game').addEventListener('click', () => { if (joined && !active && $('menu').classList.contains('hidden')) lockPointer() })
+const relock = () => { if (joined && !active && $('menu').classList.contains('hidden')) lockPointer() }
+$('game').addEventListener('click', relock)
+$('clickto').addEventListener('click', relock)
 
 // ---------- networking ----------
 function connect(name) {
   $('status').textContent = 'Connecting...'
   ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}`)
   ws.onopen = () => { ws.send(JSON.stringify({ t: 'j', name })); $('status').textContent = '' }
+  ws.onerror = () => { $('status').textContent = 'Could not reach the game server. Is the black server window still running?' }
   ws.onclose = () => {
     joined = false
     $('status').textContent = 'Disconnected from server. Reload the page to rejoin.'
     $('hud').classList.add('hidden')
+    $('clickto').classList.add('hidden')
     if (document.pointerLockElement) document.exitPointerLock()
     $('menu').classList.remove('hidden')
   }
   ws.onmessage = (ev) => {
     const m = JSON.parse(ev.data)
     if (m.t === 's') onSnapshot(m)
-    else if (m.t === 'w') { myId = m.id; joined = true; $('hud').classList.remove('hidden') }
+    else if (m.t === 'w') { myId = m.id; joined = true; $('hud').classList.remove('hidden'); showClickTo() }
     else if (m.t === 'p') ping = ping ? ping * 0.8 + (performance.now() - m.c) * 0.2 : performance.now() - m.c
     else if (m.t === 'full') $('status').textContent = 'Server is full.'
   }
