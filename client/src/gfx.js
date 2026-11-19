@@ -1,0 +1,219 @@
+// Renderer, lighting, sky and the world mesh. All textures are generated in code for now;
+// swap `makeMaterials` for real PBR texture sets when assets are available.
+import * as THREE from 'three'
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
+import { FOV } from '../../shared/constants.js'
+
+function rng(seed) {
+  let s = seed >>> 0
+  return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296 }
+}
+
+function canvasTex(size, draw) {
+  const c = document.createElement('canvas')
+  c.width = c.height = size
+  draw(c.getContext('2d'), size)
+  return c
+}
+
+function noise(g, n, r, count, alpha, light) {
+  for (let i = 0; i < count; i++) {
+    const v = light ? 255 : 0
+    g.fillStyle = `rgba(${v},${v},${v},${r() * alpha})`
+    const s = 1 + r() * 3
+    g.fillRect(r() * n, r() * n, s, s)
+  }
+}
+
+function blotches(g, n, r, count, alpha) {
+  for (let i = 0; i < count; i++) {
+    const x = r() * n, y = r() * n, rad = 20 + r() * 90
+    const gr = g.createRadialGradient(x, y, 0, x, y, rad)
+    const dark = r() > 0.5
+    gr.addColorStop(0, `rgba(${dark ? '0,0,0' : '255,255,255'},${alpha})`)
+    gr.addColorStop(1, 'rgba(0,0,0,0)')
+    g.fillStyle = gr
+    g.fillRect(x - rad, y - rad, rad * 2, rad * 2)
+  }
+}
+
+const TEX = {
+  ground: (g, n) => {
+    const r = rng(11)
+    g.fillStyle = '#8f8674'; g.fillRect(0, 0, n, n)
+    blotches(g, n, r, 40, 0.1)
+    noise(g, n, r, 9000, 0.22, false); noise(g, n, r, 5000, 0.16, true)
+    g.strokeStyle = 'rgba(40,36,30,.5)'; g.lineWidth = 3
+    for (let i = 0; i <= 2; i++) { g.beginPath(); g.moveTo(i * n / 2, 0); g.lineTo(i * n / 2, n); g.moveTo(0, i * n / 2); g.lineTo(n, i * n / 2); g.stroke() }
+  },
+  concrete: (g, n) => {
+    const r = rng(23)
+    g.fillStyle = '#a6a8a8'; g.fillRect(0, 0, n, n)
+    blotches(g, n, r, 30, 0.09)
+    noise(g, n, r, 8000, 0.18, false); noise(g, n, r, 4000, 0.14, true)
+    g.strokeStyle = 'rgba(30,30,32,.55)'; g.lineWidth = 4; g.strokeRect(0, 0, n, n)
+    g.fillStyle = 'rgba(30,30,32,.6)'
+    for (const [x, y] of [[40, 40], [n - 40, 40], [40, n - 40], [n - 40, n - 40]]) { g.beginPath(); g.arc(x, y, 9, 0, 7); g.fill() }
+    g.strokeStyle = 'rgba(40,40,40,.35)'; g.lineWidth = 1.5
+    for (let i = 0; i < 5; i++) { let x = r() * n, y = r() * n; g.beginPath(); g.moveTo(x, y); for (let k = 0; k < 6; k++) { x += (r() - 0.5) * 60; y += r() * 50; g.lineTo(x, y) } g.stroke() }
+  },
+  brick: (g, n) => {
+    const r = rng(37)
+    g.fillStyle = '#6a625a'; g.fillRect(0, 0, n, n)
+    const rows = 16, bh = n / rows, bw = n / 8
+    for (let y = 0; y < rows; y++) for (let x = -1; x < 8; x++) {
+      const t = r()
+      g.fillStyle = `rgb(${150 + t * 40},${82 + t * 30},${62 + t * 22})`
+      g.fillRect(x * bw + (y % 2 ? bw / 2 : 0) + 2, y * bh + 2, bw - 4, bh - 4)
+    }
+    noise(g, n, r, 9000, 0.2, false); blotches(g, n, r, 25, 0.1)
+  },
+  crate: (g, n) => {
+    const r = rng(41)
+    g.fillStyle = '#9a6b38'; g.fillRect(0, 0, n, n)
+    for (let i = 0; i < 6; i++) {
+      const t = r()
+      g.fillStyle = `rgb(${150 + t * 30},${102 + t * 22},${52 + t * 16})`
+      g.fillRect(i * n / 6 + 2, 0, n / 6 - 4, n)
+    }
+    g.strokeStyle = 'rgba(60,35,12,.35)'; g.lineWidth = 1
+    for (let i = 0; i < 140; i++) { const x = r() * n; g.beginPath(); g.moveTo(x, r() * n); g.lineTo(x + (r() - 0.5) * 6, r() * n); g.stroke() }
+    const f = n * 0.11
+    g.fillStyle = '#7d5226'
+    g.fillRect(0, 0, n, f); g.fillRect(0, n - f, n, f); g.fillRect(0, 0, f, n); g.fillRect(n - f, 0, f, n)
+    g.save(); g.translate(n / 2, n / 2); g.rotate(Math.PI / 4); g.fillRect(-n * 0.62, -f / 2, n * 1.24, f); g.restore()
+    g.strokeStyle = 'rgba(30,16,4,.7)'; g.lineWidth = 3; g.strokeRect(f, f, n - 2 * f, n - 2 * f); g.strokeRect(1, 1, n - 2, n - 2)
+    noise(g, n, r, 5000, 0.18, false)
+  },
+  metal: (g, n) => {
+    const r = rng(53)
+    for (let i = 0; i < 16; i++) {
+      const x = i * n / 16
+      const gr = g.createLinearGradient(x, 0, x + n / 16, 0)
+      gr.addColorStop(0, '#8a8a8a'); gr.addColorStop(0.5, '#f2f2f2'); gr.addColorStop(1, '#7c7c7c')
+      g.fillStyle = gr; g.fillRect(x, 0, n / 16 + 1, n)
+    }
+    blotches(g, n, r, 20, 0.12); noise(g, n, r, 5000, 0.15, false)
+    g.fillStyle = 'rgba(0,0,0,.35)'; g.fillRect(0, 0, n, 10); g.fillRect(0, n - 10, n, 10)
+  },
+  building: (g, n) => {
+    const r = rng(67)
+    g.fillStyle = '#7f8792'; g.fillRect(0, 0, n, n)
+    for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) {
+      g.fillStyle = r() > 0.8 ? '#c9d6e2' : '#3c4753'
+      g.fillRect(x * n / 8 + 12, y * n / 8 + 14, n / 8 - 24, n / 8 - 26)
+    }
+  },
+}
+
+function makeMaterials(aniso) {
+  const mk = (kind, tint, rough, metal, scale, bump) => {
+    const c = canvasTex(512, TEX[kind])
+    const map = new THREE.CanvasTexture(c)
+    map.colorSpace = THREE.SRGBColorSpace
+    const bm = new THREE.CanvasTexture(c)
+    for (const t of [map, bm]) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = aniso }
+    const m = new THREE.MeshStandardMaterial({ map, bumpMap: bm, bumpScale: bump, color: tint, roughness: rough, metalness: metal })
+    m.userData.scale = scale
+    return m
+  }
+  return {
+    ground: mk('ground', 0xffffff, 0.95, 0, 256, 1.5),
+    concrete: mk('concrete', 0xffffff, 0.9, 0, 128, 1.5),
+    brick: mk('brick', 0xffffff, 0.88, 0, 192, 3),
+    crate: mk('crate', 0xffffff, 0.8, 0, 0, 2),
+    metalBlue: mk('metal', 0x2f5f9e, 0.55, 0.5, 160, 3),
+    metalRed: mk('metal', 0xa43a2c, 0.55, 0.5, 160, 3),
+    building: mk('building', 0xffffff, 0.9, 0, 400, 0),
+  }
+}
+
+function boxGeo(b, scale) {
+  const w = b.x1 - b.x0, h = b.y1 - b.y0, d = b.z1 - b.z0
+  const g = new THREE.BoxGeometry(w, h, d)
+  g.translate((b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2, (b.z0 + b.z1) / 2)
+  if (scale > 0) {
+    const uv = g.attributes.uv
+    // face order: +x, -x, +y, -y, +z, -z (4 verts each)
+    const dims = [[d, h], [d, h], [w, d], [w, d], [w, h], [w, h]]
+    for (let f = 0; f < 6; f++) for (let i = 0; i < 4; i++) {
+      const k = f * 4 + i
+      uv.setXY(k, uv.getX(k) * dims[f][0] / scale, uv.getY(k) * dims[f][1] / scale)
+    }
+  }
+  return g
+}
+
+export function createGfx(canvas, MAP) {
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' })
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+  renderer.shadowMap.enabled = true
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap
+  renderer.toneMapping = THREE.ACESFilmicToneMapping
+  renderer.toneMappingExposure = 1.05
+  renderer.autoClear = false
+
+  const scene = new THREE.Scene()
+  scene.fog = new THREE.Fog(0xc4d2e0, 1400, 5200)
+  const camera = new THREE.PerspectiveCamera(FOV, 1, 2, 9000)
+  camera.rotation.order = 'YXZ'
+  scene.add(camera)
+
+  // sky dome
+  const sky = new THREE.Mesh(
+    new THREE.SphereGeometry(8000, 32, 16),
+    new THREE.ShaderMaterial({
+      side: THREE.BackSide, depthWrite: false, fog: false,
+      uniforms: { sun: { value: new THREE.Vector3(0.48, 0.74, 0.47).normalize() } },
+      vertexShader: 'varying vec3 d; void main(){ d = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
+      fragmentShader: `varying vec3 d; uniform vec3 sun;
+        void main(){
+          float h = clamp(d.y, 0.0, 1.0);
+          vec3 c = mix(vec3(0.80,0.87,0.93), vec3(0.20,0.42,0.78), pow(h, 0.55));
+          float s = max(dot(normalize(d), sun), 0.0);
+          c += vec3(1.0,0.85,0.6) * (pow(s, 600.0) * 3.0 + pow(s, 12.0) * 0.25);
+          gl_FragColor = vec4(c, 1.0);
+        }`,
+    }),
+  )
+  sky.frustumCulled = false
+  scene.add(sky)
+
+  scene.add(new THREE.HemisphereLight(0xbcd3ff, 0x7a6a55, 1.15))
+  const sun = new THREE.DirectionalLight(0xfff0d6, 3.2)
+  sun.position.set(980, 1500, 950)
+  sun.castShadow = true
+  sun.shadow.mapSize.set(4096, 4096)
+  const sc = sun.shadow.camera
+  sc.left = -1250; sc.right = 1250; sc.top = 1250; sc.bottom = -1250; sc.near = 200; sc.far = 4200
+  sun.shadow.bias = -0.0004
+  sun.shadow.normalBias = 1.2
+  scene.add(sun)
+
+  const mats = makeMaterials(renderer.capabilities.getMaxAnisotropy())
+  const groups = {}
+  for (const b of MAP.boxes) (groups[b.mat] ||= []).push(boxGeo(b, mats[b.mat].userData.scale))
+  for (const k in groups) {
+    const mesh = new THREE.Mesh(mergeGeometries(groups[k]), mats[k])
+    mesh.castShadow = mesh.receiveShadow = true
+    scene.add(mesh)
+  }
+  const dg = {}
+  for (const b of MAP.decor) (dg[b.mat] ||= []).push(boxGeo(b, mats[b.mat].userData.scale))
+  for (const k in dg) {
+    const mesh = new THREE.Mesh(mergeGeometries(dg[k]), mats[k])
+    mesh.receiveShadow = k === 'ground'
+    scene.add(mesh)
+  }
+
+  function resize() {
+    const w = window.innerWidth, h = window.innerHeight
+    renderer.setSize(w, h, false)
+    camera.aspect = w / h
+    camera.updateProjectionMatrix()
+  }
+  window.addEventListener('resize', resize)
+  resize()
+
+  return { renderer, scene, camera, THREE }
+}

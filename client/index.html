@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Breachline</title>
+<link rel="stylesheet" href="/src/style.css">
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<div id="hud" class="hidden">
+  <div id="crosshair"><i class="t"></i><i class="b"></i><i class="l"></i><i class="r"></i></div>
+  <div id="hitmarker"></div>
+  <div id="scope" class="hidden"></div>
+  <div id="vignette"></div>
+  <div id="killfeed"></div>
+  <div id="net"></div>
+  <div id="health"><span class="lbl">HEALTH</span><b id="hp">100</b></div>
+  <div id="ammo"><span id="wname"></span><b id="clip">30</b></div>
+  <div id="slots"></div>
+  <div id="dead" class="hidden"><div id="deadmsg"></div><div id="deadsub"></div></div>
+  <div id="scoreboard" class="hidden"><h2>Scoreboard</h2><table><thead><tr><th>Player</th><th>Kills</th><th>Deaths</th></tr></thead><tbody id="scores"></tbody></table></div>
+</div>
+
+<div id="menu">
+  <div class="panel">
+    <h1>BREACHLINE</h1>
+    <p class="sub">LAN free-for-all</p>
+    <label>Name <input id="name" maxlength="16" autocomplete="off"></label>
+    <label>Mouse sensitivity <input id="sens" type="number" step="0.1" min="0.1" max="20"></label>
+    <button id="play">PLAY</button>
+    <div id="status"></div>
+    <table class="keys">
+      <tr><td>WASD</td><td>Move</td><td>Space / Wheel</td><td>Jump</td></tr>
+      <tr><td>Ctrl / C</td><td>Crouch</td><td>Shift</td><td>Walk (silent)</td></tr>
+      <tr><td>Mouse 1</td><td>Fire</td><td>Mouse 2</td><td>Scope (sniper)</td></tr>
+      <tr><td>1 - 5</td><td>Weapons</td><td>R</td><td>Reload</td></tr>
+      <tr><td>Tab</td><td>Scoreboard</td><td>Esc</td><td>Menu</td></tr>
+    </table>
+    <p class="tip">Stop before you shoot: tap the opposite strafe key to stop instantly.</p>
+  </div>
+</div>
+<script type="module" src="/src/main.js"></script>
+</body>
+</html>
