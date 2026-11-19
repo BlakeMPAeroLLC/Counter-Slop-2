@@ -12,6 +12,7 @@ import { createState, spawnState, step, serialize } from '../shared/sim.js'
 
 const PORT = Number(process.env.PORT) || 3000
 const MAX_PLAYERS = 8
+const RESPAWN = Number(process.env.RESPAWN_MS) || RESPAWN_MS
 const DIST = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'dist')
 const MIME = {
   '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json',
@@ -98,7 +99,7 @@ function handleFire(shooter, e) {
   if (vs.hp <= 0) {
     vs.hp = 0; vs.alive = 0; vs.zoom = 0
     victim.deaths++; shooter.kills++
-    victim.respawnAt = performance.now() + RESPAWN_MS
+    victim.respawnAt = performance.now() + RESPAWN
     events.push({ k: 'kill', a: shooter.id, v: victim.id, w: e.w, head })
     rosterDirty = true
   }

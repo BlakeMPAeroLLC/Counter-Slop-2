@@ -232,9 +232,9 @@ export function createGfx(canvas, MAP) {
     sun.position.set(Math.cos(lon) * Math.cos(lat), Math.sin(lat), Math.sin(lon) * Math.cos(lat)).multiplyScalar(2200)
     scene.background = tex
     scene.environment = tex
-    scene.environmentIntensity = 0.75
+    scene.environmentIntensity = 1.15
     scene.remove(sky)
-    hemi.intensity = 0.25
+    hemi.intensity = 0.45
     sun.intensity = 3.0
   }, undefined, () => console.warn('sky.hdr missing, keeping generated sky'))
 
