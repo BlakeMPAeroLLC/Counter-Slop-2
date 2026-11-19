@@ -56,59 +56,106 @@ function buildBody(color) {
   }
 }
 
-// ---- animated soldier from client/public/models/player.glb ----
-const HAND_NODE = ['Knife_2', 'Pistol', 'SMG', 'AK', 'Sniper'] // attach points on the right hand
+// ---- character models ----
+// player.glb is the original cartoon soldier and the fallback for everyone. Optional team
+// models replace it: models/attacker.glb and models/defender.glb. Each may come with extra
+// animation files on the same skeleton, e.g. models/attacker_run.glb (roles: idle, run,
+// crouch, death), which is how rigs that hold one clip per file (such as Meshy's) are used.
+const HAND_NODE = ['Knife_2', 'Pistol', 'SMG', 'AK', 'Sniper'] // attach points on player.glb's right hand
 const HELD_LEN = [13, 10, 24, 34, 46] // world length of each held weapon
 const WEAPON_FILES = ['knife', 'pistol', 'smg', 'rifle', 'sniper']
-// The model has an oversized cartoon head. Shrinking it brings it in line with the head hitbox.
-const HEAD_SCALE = 0.62
-const assets = { player: null, weapons: [], waiting: [] }
+const ROLES = ['idle', 'run', 'crouch', 'death']
+const CHARS = {
+  // headScale: the cartoon head is far bigger than the head hitbox, so it is shrunk to match
+  player: { clips: { idle: 'Idle_Shoot', run: 'Run_Gun', crouch: 'Duck', death: 'Death', air: 'Jump_Idle' }, freeze: { idle: 0.1 },
+    headScale: 0.62, tint: 'Character_Main', hands: HAND_NODE, face: 0 },
+  // face: extra turn so the model looks where the player looks. weapon: how a held gun sits in the hand.
+  attacker: { face: Math.PI, weapon: { rot: [0, Math.PI / 2, 0], pos: [0, 0, 0] } },
+  defender: { face: Math.PI, weapon: { rot: [0, Math.PI / 2, 0], pos: [0, 0, 0] } },
+}
+const assets = { chars: {}, weapons: [], waiting: [] }
+const ready = () => { const w = assets.waiting; assets.waiting = []; w.forEach((f) => f()) }
 {
   const loader = new GLTFLoader()
-  loader.load('/models/player.glb', (g) => { assets.player = g; assets.waiting.forEach((f) => f()); assets.waiting = [] },
-    undefined, () => console.warn('player.glb missing, using placeholder bodies'))
-  WEAPON_FILES.forEach((f, i) => loader.load(`/models/${f}.glb`, (g) => { assets.weapons[i] = g.scene }, undefined, () => {}))
+  const load = (url) => new Promise((res) => loader.load(url, res, undefined, () => res(null)))
+  for (const key of Object.keys(CHARS)) {
+    load(`/models/${key === 'player' ? 'player' : key}.glb`).then(async (g) => {
+      if (!g) { if (key === 'player') console.warn('player.glb missing, using placeholder bodies'); return }
+      const clips = {}
+      for (const c of g.animations) clips[c.name.split('|').pop()] = c
+      if (key !== 'player') {
+        // roles from extra files first, then guessed from clip names inside the main file
+        const extra = await Promise.all(ROLES.map((r) => load(`/models/${key}_${r}.glb`)))
+        ROLES.forEach((r, i) => { const e = extra[i]; if (e && e.animations[0]) clips[r] = e.animations[0] })
+        const guess = { idle: /idle|aim|hold|stand/i, run: /run|charge|jog|walk/i, crouch: /crouch|duck|kneel/i, death: /death|dead|dying|fall/i }
+        for (const r of ROLES) {
+          if (clips[r]) continue
+          const hit = g.animations.find((c) => guess[r].test(c.name))
+          if (hit) clips[r] = hit
+        }
+        CHARS[key].clips = Object.fromEntries(ROLES.filter((r) => clips[r]).map((r) => [r, r]))
+      }
+      assets.chars[key] = { gltf: g, clips }
+      ready()
+    })
+  }
+  WEAPON_FILES.forEach((f, i) => loader.load(`/models/${f}.glb`, (g) => { assets.weapons[i] = g.scene; ready() }, undefined, () => {}))
 }
 
-function buildRig(color) {
-  const model = SkeletonUtils.clone(assets.player.scene)
+/** Which loaded character model a player of this team should use. */
+function charFor(team) {
+  if (team === 1 && assets.chars.attacker) return 'attacker'
+  if (team === 2 && assets.chars.defender) return 'defender'
+  return assets.chars.player ? 'player' : null
+}
+
+const HAND_RE = /^(mixamorig\d*:)?right_?hand$|^hand[._]?r$|^r[._]?hand$|righthand$/i
+
+function buildRig(key, color) {
+  const cfg = CHARS[key], src = assets.chars[key]
+  const model = SkeletonUtils.clone(src.gltf.scene)
   const root = new THREE.Group()
-  const headB = model.getObjectByName('Head')
+  const turn = new THREE.Group()
+  turn.rotation.y = cfg.face || 0
+  turn.add(model)
+  root.add(turn)
+  const headB = cfg.headScale ? model.getObjectByName('Head') : null
   const headBase = headB ? headB.scale.clone() : null
-  if (headB) headB.scale.multiplyScalar(HEAD_SCALE)
+  if (headB) headB.scale.multiplyScalar(cfg.headScale)
   // scale so the posed mesh is exactly one player hull (72 units) tall, feet on the ground
   model.updateMatrixWorld(true)
   const box = new THREE.Box3().setFromObject(model, true)
   const k = 72 / Math.max(box.max.y - box.min.y, 1e-6)
   model.scale.multiplyScalar(k)
   model.position.y = -box.min.y * k
-  root.add(model)
   const tinted = []
+  let hand = null
   model.traverse((o) => {
+    if (!hand && o.isBone && HAND_RE.test(o.name)) hand = o
     if (!o.isMesh) return
     o.castShadow = true
     o.frustumCulled = false
-    if (o.material.name === 'Character_Main') { o.material = o.material.clone(); tinted.push(o.material) }
+    if (cfg.tint && o.material.name === cfg.tint) { o.material = o.material.clone(); tinted.push(o.material) }
   })
   const setColor = (c) => { for (const m of tinted) m.color.set(c).multiplyScalar(0.6) }
   setColor(color)
   const mixer = new THREE.AnimationMixer(model)
   const act = {}
-  for (const clip of assets.player.animations) {
-    const name = clip.name.split('|').pop()
-    act[name] = mixer.clipAction(clip)
-    act[name].play()
-    act[name].weight = 0
+  for (const [role, name] of Object.entries(cfg.clips || {})) {
+    const clip = src.clips[name]
+    if (!clip) continue
+    const a = mixer.clipAction(clip)
+    a.play(); a.weight = 0
+    if (cfg.freeze && cfg.freeze[role] !== undefined) { a.time = cfg.freeze[role]; a.paused = true }
+    act[role] = a
   }
-  if (act.Death) { act.Death.setLoop(THREE.LoopOnce); act.Death.clampWhenFinished = true }
-  if (act.Idle_Shoot) { act.Idle_Shoot.time = 0.1; act.Idle_Shoot.paused = true } // frozen = aiming stance
-  const pick = (...names) => names.find((n) => act[n])
+  if (act.death) { act.death.setLoop(THREE.LoopOnce); act.death.clampWhenFinished = true }
   const held = []
-  let heldW = -1, state = ''
+  let heldW = -1, state = '', fallT = 0
 
   function hold(w) {
     if (!held[w] && assets.weapons[w]) {
-      const node = model.getObjectByName(HAND_NODE[w])
+      const node = cfg.hands ? model.getObjectByName(cfg.hands[w]) : hand
       if (node) {
         const g = new THREE.Group()
         assets.weapons[w].traverse((o) => {
@@ -117,7 +164,8 @@ function buildRig(color) {
           m.castShadow = true
           g.add(m)
         })
-        if (w === 4) g.rotation.z = Math.PI // this file's barrel points the other way
+        if (cfg.hands) { if (w === 4) g.rotation.z = Math.PI } // this file's barrel points the other way
+        else if (cfg.weapon) { g.rotation.set(...cfg.weapon.rot); g.position.set(...cfg.weapon.pos) }
         node.add(g)
         root.updateMatrixWorld(true)
         const size = new THREE.Box3().setFromObject(g).getSize(new THREE.Vector3())
@@ -130,25 +178,28 @@ function buildRig(color) {
   }
 
   return {
-    root, setColor,
+    root, setColor, key,
     animate(dt, r, speed) {
-      root.rotation.set(0, r.yaw, 0)
       if (heldW !== r.w) hold(r.w)
       let want
-      if (!r.alive) want = pick('Death')
-      else if (!r.ground) want = pick('Jump_Idle', 'Run_Gun')
-      else if (r.duck) want = pick('Duck', 'Idle_Shoot')
-      else if (speed > 40) want = pick('Run_Gun', 'Run')
-      else want = pick('Idle_Shoot', 'Idle')
+      if (!r.alive) want = 'death'
+      else if (!r.ground && act.air) want = 'air'
+      else if (r.duck && act.crouch) want = 'crouch'
+      else if (speed > 40 && act.run) want = 'run'
+      else want = 'idle'
+      if (!act[want]) want = act.idle ? 'idle' : ''
+      // no death clip: tip over instead
+      fallT += ((r.alive || act.death ? 0 : 1) - fallT) * Math.min(1, dt * 7)
+      root.rotation.set(-fallT * Math.PI / 2, r.yaw, 0, 'YXZ')
       if (want !== state) {
         state = want
-        if (want === 'Death') { act.Death.reset(); act.Death.play() }
+        if (want === 'death') { act.death.reset(); act.death.play() }
       }
       const kf = Math.min(1, dt * 12)
-      for (const n in act) act[n].weight += ((n === state ? 1 : 0) - act[n].weight) * (n === 'Death' && state === 'Death' ? 1 : kf)
-      if (act.Run_Gun) act.Run_Gun.timeScale = Math.max(0.4, speed / 230)
+      for (const n in act) act[n].weight += ((n === state ? 1 : 0) - act[n].weight) * (n === 'death' && state === 'death' ? 1 : kf)
+      if (act.run) act.run.timeScale = Math.max(0.4, speed / 230)
       mixer.update(dt)
-      if (headB) headB.scale.copy(headBase).multiplyScalar(HEAD_SCALE)
+      if (headB) headB.scale.copy(headBase).multiplyScalar(cfg.headScale)
     },
   }
 }
@@ -159,24 +210,23 @@ export function createActors(scene) {
   function get(id) {
     let r = remotes.get(id)
     if (!r) {
-      const body = assets.player ? buildRig(0x777777) : buildBody(0x777777)
+      const body = buildBody(0x777777)
       scene.add(body.root)
       r = { id, body, buf: [], offset: null, viewTick: 0, x: 0, y: 0, z: 0, yaw: 0, pitch: 0, alive: false, duck: 0, ground: 1, w: 3,
-        team: 0, colorKey: -1, hidden: false, walk: 0, duckVis: 0, fall: 0, lastX: 0, lastZ: 0, stepDist: 0, rigged: !!assets.player }
+        team: 0, colorKey: -1, hidden: false, walk: 0, duckVis: 0, fall: 0, lastX: 0, lastZ: 0, stepDist: 0 }
       remotes.set(id, r)
-      if (!assets.player) {
-        // swap the placeholder for the real model once it has loaded
-        assets.waiting.push(() => {
-          const cur = remotes.get(id)
-          if (!cur || !assets.player || cur.rigged) return
-          scene.remove(cur.body.root)
-          cur.body = buildRig(0x777777)
-          cur.rigged = true; cur.colorKey = -1
-          scene.add(cur.body.root)
-        })
-      }
     }
     return r
+  }
+
+  /** Swap a player's body when a better model has loaded or their team (and so their model) changed. */
+  function fitBody(r) {
+    const key = charFor(r.team)
+    if (!key || r.body.key === key) return
+    scene.remove(r.body.root)
+    r.body = buildRig(key, 0x777777)
+    r.colorKey = -1
+    scene.add(r.body.root)
   }
 
   return {
@@ -222,6 +272,7 @@ export function createActors(scene) {
         const flags = f < 0.5 ? p0.flags : p1.flags
         r.alive = !!(flags & 1); r.duck = (flags & 2) ? 1 : 0; r.ground = (flags & 4) ? 1 : 0; r.w = p1.w
 
+        fitBody(r)
         const key = r.team ? TEAM_COLORS[r.team] : ID_COLORS[r.id % ID_COLORS.length]
         if (r.colorKey !== key) { r.body.setColor(key); r.colorKey = key }
         const moved = Math.hypot(r.x - r.lastX, r.z - r.lastZ)

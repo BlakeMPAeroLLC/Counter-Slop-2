@@ -8,7 +8,7 @@
 //  - Other players are drawn slightly in the past, interpolated on their own command clock.
 import { TICK, DT, BTN, WEAPONS, MOVE, FOV, TEAM, TEAM_NAME, RULES, SHOP } from '../../shared/constants.js'
 import { MAP } from '../../shared/map.js'
-import { rayWorld } from '../../shared/physics.js'
+import { rayWorld, lineOfSight } from '../../shared/physics.js'
 import { createState, deserialize, step, inaccuracy, recoilPattern, siteAt } from '../../shared/sim.js'
 import { createGfx } from './gfx.js'
 import { createViewModel } from './viewmodel.js'
@@ -485,14 +485,36 @@ radarBg.width = radarBg.height = 200
     g.fillRect(rpx(b.x0), rpx(b.z0), Math.max(1, (b.x1 - b.x0) * RS), Math.max(1, (b.z1 - b.z0) * RS))
   }
 }
+// Enemies show on the radar while you or a living teammate has line of sight to them.
+// Rechecked a few times a second, not every frame.
+const spotted = new Set()
+let spotT = 0
+function updateSpotted(dt) {
+  spotT -= dt
+  if (spotT > 0) return
+  spotT = 0.2
+  spotted.clear()
+  if (!state.team) return
+  const eyes = []
+  if (state.alive) eyes.push([state.x, state.y + 64, state.z])
+  for (const r of actors.remotes.values()) if (r.alive && r.team === state.team) eyes.push([r.x, r.y + 64, r.z])
+  for (const r of actors.remotes.values()) {
+    if (!r.alive || r.team === state.team) continue
+    for (const e of eyes) {
+      if (Math.hypot(e[0] - r.x, e[2] - r.z) < 2600 && lineOfSight(MAP.boxes, e[0], e[1], e[2], r.x, r.y + 50, r.z)) { spotted.add(r.id); break }
+    }
+  }
+}
 function drawRadar(cx, cz, cyaw) {
   rctx.clearRect(0, 0, 200, 200)
   rctx.drawImage(radarBg, 0, 0)
   if (state.team) {
     for (const r of actors.remotes.values()) {
-      if (!r.alive || r.team !== state.team) continue
-      rctx.fillStyle = r.team === TEAM.ATT ? '#ff8a3c' : '#5aa2ff'
-      rctx.beginPath(); rctx.arc(rpx(r.x), rpx(r.z), 3.2, 0, 7); rctx.fill()
+      if (!r.alive) continue
+      const mine = r.team === state.team
+      if (!mine && !spotted.has(r.id)) continue
+      rctx.fillStyle = mine ? (r.team === TEAM.ATT ? '#ff8a3c' : '#5aa2ff') : '#ff2d2d'
+      rctx.beginPath(); rctx.arc(rpx(r.x), rpx(r.z), mine ? 3.2 : 3.6, 0, 7); rctx.fill()
     }
   }
   const b = game.b
@@ -681,7 +703,7 @@ function frame(now) {
   audio.setListener(camera.position.x, camera.position.y, camera.position.z, cyaw)
   fx.update(dt, (n) => audio.sfx('nade_bounce', n, 0.5, { reach: 300 }))
   vm.update(dt, state, a, Math.hypot(state.vx, state.vz))
-  if (joined) { updateHud(dt, target ? nameOf(target.id) : ''); drawRadar(cx, cz, cyaw) }
+  if (joined) { updateHud(dt, target ? nameOf(target.id) : ''); updateSpotted(dt); drawRadar(cx, cz, cyaw) }
 
   renderer.clear()
   renderer.render(scene, camera)
