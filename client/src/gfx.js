@@ -2,6 +2,7 @@
 // swap `makeMaterials` for real PBR texture sets when assets are available.
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
+import { RGBELoader } from 'three/addons/loaders/RGBELoader.js'
 import { FOV } from '../../shared/constants.js'
 
 function rng(seed) {
@@ -117,15 +118,39 @@ function makeMaterials(aniso) {
     m.userData.scale = scale
     return m
   }
-  return {
-    ground: mk('ground', 0xffffff, 0.95, 0, 256, 1.5),
-    concrete: mk('concrete', 0xffffff, 0.9, 0, 128, 1.5),
-    brick: mk('brick', 0xffffff, 0.88, 0, 192, 3),
+  const mats = {
+    ground: mk('ground', 0xffffff, 0.95, 0, 170, 1.5),
+    concrete: mk('concrete', 0xffffff, 0.9, 0, 180, 1.5),
+    brick: mk('brick', 0xffffff, 0.88, 0, 150, 3),
     crate: mk('crate', 0xffffff, 0.8, 0, 0, 2),
-    metalBlue: mk('metal', 0x2f5f9e, 0.55, 0.5, 160, 3),
-    metalRed: mk('metal', 0xa43a2c, 0.55, 0.5, 160, 3),
+    metalBlue: mk('metal', 0x2f5f9e, 0.55, 0.5, 120, 3),
+    metalRed: mk('metal', 0xa43a2c, 0.55, 0.5, 120, 3),
     building: mk('building', 0xffffff, 0.9, 0, 400, 0),
   }
+  // Photo textures from client/public/textures/<set>/ replace the generated ones as they load.
+  const SETS = { ground: ['ground', [2.1, 1.95, 1.85]], concrete: ['concrete', 0xffffff], brick: ['brick', 0xffffff],
+    crate: ['wood', 0xffffff], metalBlue: ['metal', 0x6f9fe0], metalRed: ['metal', 0xe07a66] }
+  const loader = new THREE.TextureLoader()
+  const cache = {}
+  const load = (set, file, srgb) => new Promise((res, rej) => {
+    const key = set + '/' + file
+    if (cache[key]) return res(cache[key])
+    loader.load(`/textures/${key}.jpg`, (t) => {
+      t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = aniso
+      if (srgb) t.colorSpace = THREE.SRGBColorSpace
+      cache[key] = t; res(t)
+    }, undefined, rej)
+  })
+  for (const [name, [set, tint]] of Object.entries(SETS)) {
+    Promise.all([load(set, 'color', true), load(set, 'normal', false), load(set, 'roughness', false)]).then(([c, n, r]) => {
+      const m = mats[name]
+      m.map = c; m.normalMap = n; m.roughnessMap = r; m.bumpMap = null
+      m.roughness = 1; m.metalness = set === 'metal' ? 0.35 : 0
+      if (Array.isArray(tint)) m.color.setRGB(...tint); else m.color.set(tint)
+      m.needsUpdate = true
+    }).catch(() => console.warn('texture set missing, keeping generated one:', set))
+  }
+  return mats
 }
 
 function boxGeo(b, scale) {
@@ -179,7 +204,8 @@ export function createGfx(canvas, MAP) {
   sky.frustumCulled = false
   scene.add(sky)
 
-  scene.add(new THREE.HemisphereLight(0xbcd3ff, 0x7a6a55, 1.15))
+  const hemi = new THREE.HemisphereLight(0xbcd3ff, 0x7a6a55, 1.15)
+  scene.add(hemi)
   const sun = new THREE.DirectionalLight(0xfff0d6, 3.2)
   sun.position.set(980, 1500, 950)
   sun.castShadow = true
@@ -189,6 +215,28 @@ export function createGfx(canvas, MAP) {
   sun.shadow.bias = -0.0004
   sun.shadow.normalBias = 1.2
   scene.add(sun)
+
+  // HDR sky: becomes the backdrop and the ambient light; the sun is aimed where the sky's sun is.
+  new RGBELoader().setDataType(THREE.FloatType).load('/textures/sky.hdr', (tex) => {
+    tex.mapping = THREE.EquirectangularReflectionMapping
+    const { data, width, height } = tex.image
+    let best = -1, bi = 0
+    for (let i = 0; i < width * height; i += 3) {
+      const l = data[i * 4] + data[i * 4 + 1] + data[i * 4 + 2]
+      if (l > best) { best = l; bi = i }
+    }
+    const u = ((bi % width) + 0.5) / width, v = 1 - (Math.floor(bi / width) + 0.5) / height
+    let lat = (v - 0.5) * Math.PI
+    const lon = (u - 0.5) * Math.PI * 2
+    lat = Math.min(Math.max(lat, 0.5), 1.2)
+    sun.position.set(Math.cos(lon) * Math.cos(lat), Math.sin(lat), Math.sin(lon) * Math.cos(lat)).multiplyScalar(2200)
+    scene.background = tex
+    scene.environment = tex
+    scene.environmentIntensity = 0.75
+    scene.remove(sky)
+    hemi.intensity = 0.25
+    sun.intensity = 3.0
+  }, undefined, () => console.warn('sky.hdr missing, keeping generated sky'))
 
   const mats = makeMaterials(renderer.capabilities.getMaxAnisotropy())
   const groups = {}

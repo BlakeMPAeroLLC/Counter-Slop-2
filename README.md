@@ -38,9 +38,11 @@ Change the port with `PORT=4000 npm start`.
 | `client/src/viewmodel.js` | First-person weapons. Set `MODEL_URLS` to load `.glb` models from `client/public/models/` |
 | `test/` | `npm test` - movement physics and an end-to-end two-player network test |
 
-## Adding real assets
+## Assets
 
-- Weapon models: put `.glb` files in `client/public/models/`, set the path in `MODEL_URLS`
-  and tune `MODEL_FIT` in `client/src/viewmodel.js`.
-- World textures: replace `makeMaterials` in `client/src/gfx.js`.
-- Sounds: replace the synthesised effects in `client/src/audio.js`.
+All CC0; sources are listed in `client/public/CREDITS.md`. Each has a generated fallback if the file is missing.
+
+- Weapon models: `client/public/models/*.glb`. Placement per weapon is `MODEL_FIT` in `client/src/viewmodel.js`.
+- Player model: `client/public/models/player.glb`, set up in `buildRig` in `client/src/actors.js`.
+- World textures and sky: `client/public/textures/`, loaded in `client/src/gfx.js`.
+- Sounds: `client/public/sounds/*.ogg`, loaded in `client/src/audio.js`.

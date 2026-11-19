@@ -1,17 +1,44 @@
 // First-person weapon rendering: its own scene + camera drawn on top of the world, so the
-// gun never clips into walls. Guns are built from primitives for now.
+// gun never clips into walls. Models load from client/public/models/; the primitive guns
+// below are only shown while loading or if a file is missing.
 //
-// TO PLUG IN REAL MODELS: drop a .glb in client/public/models/ and set its path below,
-// e.g. rifle: '/models/rifle.glb'. The model should point down -Z with its grip near the
-// origin; adjust `fit` (scale / position / rotation) per weapon until it sits right.
+// MODEL_FIT places each model: `dir` is the axis the barrel points along in the file,
+// `len` the on-screen length, `rear`/`top` where the back and top of the gun sit relative
+// to the grip, `rot` an extra twist.
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
 import { WEAPONS } from '../../shared/constants.js'
 
-export const MODEL_URLS = { knife: null, pistol: null, smg: null, rifle: null, sniper: null }
+export const MODEL_URLS = {
+  knife: '/models/knife.glb', pistol: '/models/pistol.glb', smg: '/models/smg.glb',
+  rifle: '/models/rifle.glb', sniper: '/models/sniper.glb',
+}
 export const MODEL_FIT = {
-  // knife: { scale: 1, pos: [0, 0, 0], rot: [0, 0, 0], muzzle: [0, 0.03, -0.5] },
+  rifle: { dir: 'x-', len: 0.74, rear: 0.26, top: 0.085, muzzleY: 0.38 },
+  smg: { dir: 'x-', len: 0.56, rear: 0.2, top: 0.1, muzzleY: 0.3 },
+  pistol: { dir: 'x-', len: 0.19, rear: -0.1, top: 0.06, muzzleY: 0.15 },
+  sniper: { dir: 'x+', len: 1.05, rear: 0.3, top: 0.14, muzzleY: 0.45 },
+  knife: { dir: 'y+', len: 0.3, rear: 0.06, top: 0.03, muzzleY: 0.5, rot: [0.25, 0.35, 0.5] },
+}
+const DIR_ROT = { 'x-': [0, -Math.PI / 2, 0], 'x+': [0, Math.PI / 2, 0], 'y+': [-Math.PI / 2, 0, 0], 'z-': [0, 0, 0], 'z+': [0, Math.PI, 0] }
+
+/** Orient, scale and place a loaded model. Returns { object, muzzle }. */
+export function fitModel(model, fit) {
+  const pivot = new THREE.Group()
+  pivot.rotation.set(...DIR_ROT[fit.dir])
+  pivot.add(model)
+  const wrap = new THREE.Group()
+  wrap.add(pivot)
+  wrap.updateMatrixWorld(true)
+  const box = new THREE.Box3().setFromObject(wrap)
+  pivot.scale.setScalar(fit.len / (box.max.z - box.min.z))
+  wrap.updateMatrixWorld(true)
+  box.setFromObject(wrap)
+  const cx = (box.min.x + box.max.x) / 2
+  pivot.position.set(-cx, fit.top - box.max.y, fit.rear - box.max.z)
+  const h = box.max.y - box.min.y
+  return { object: wrap, muzzle: [0, fit.top - h * fit.muzzleY, fit.rear - fit.len - 0.02] }
 }
 
 const M = {
@@ -156,18 +183,14 @@ export function createViewModel(renderer) {
     const muzzle = new THREE.Vector3(...BUILD[W.id](inner))
     g.visible = false
     root.add(g)
-    const url = MODEL_URLS[W.id]
-    if (url) {
+    const url = MODEL_URLS[W.id], fit = MODEL_FIT[W.id]
+    if (url && fit) {
       new GLTFLoader().load(url, (gltf) => {
-        const fit = MODEL_FIT[W.id] || {}
+        const f = fitModel(gltf.scene, fit)
         inner.clear()
-        inner.rotation.set(0, 0, 0)
-        const m = gltf.scene
-        m.scale.setScalar(fit.scale || 1)
-        if (fit.pos) m.position.set(...fit.pos)
-        if (fit.rot) m.rotation.set(...fit.rot)
-        inner.add(m)
-        if (fit.muzzle) muzzle.set(...fit.muzzle)
+        inner.rotation.set(...(fit.rot || [0, 0, 0]))
+        inner.add(f.object)
+        muzzle.set(...f.muzzle)
       }, undefined, (e) => console.warn('weapon model failed to load, using placeholder', url, e))
     }
     return { g, muzzle }

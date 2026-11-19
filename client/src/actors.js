@@ -1,5 +1,7 @@
 // Other players (interpolated on each player's own command timeline) and world effects.
 import * as THREE from 'three'
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
+import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js'
 import { TICK } from '../../shared/constants.js'
 
 const COLORS = [0x3d6ea8, 0xa8553d, 0x4f8f4a, 0x8a5aa8, 0xa89a3d, 0x3d9aa8, 0xa83d6e, 0x777777]
@@ -37,7 +39,112 @@ function buildBody(color) {
   mk(new THREE.BoxGeometry(2.4, 8, 3.5), gunM, arms, 3, -5, -20)
   upper.add(arms)
   root.add(legL, legR, upper)
-  return { root, legL, legR, upper, head, arms }
+  return {
+    root,
+    animate(dt, r, speed) {
+      root.rotation.set(-r.fall * Math.PI / 2, r.yaw, 0, 'YXZ')
+      const amp = r.ground ? Math.min(speed / 250, 1) * 0.75 : 0.25
+      const sw = Math.sin(r.walk) * amp
+      const crouch = r.duckVis
+      legL.rotation.x = sw - crouch * 1.0; legR.rotation.x = -sw - crouch * 0.4
+      legL.position.y = legR.position.y = 33 - crouch * 9
+      upper.position.y = 33 - crouch * 16
+      upper.rotation.x = -crouch * 0.25 + r.pitch * 0.25
+      head.rotation.x = r.pitch * 0.5
+      arms.rotation.x = r.pitch * 0.6 + crouch * 0.25
+    },
+  }
+}
+
+// ---- animated soldier from client/public/models/player.glb ----
+const HAND_NODE = ['Knife_2', 'Pistol', 'SMG', 'AK', 'Sniper'] // attach points on the right hand
+const HELD_LEN = [13, 10, 24, 34, 46] // world length of each held weapon
+const WEAPON_FILES = ['knife', 'pistol', 'smg', 'rifle', 'sniper']
+const assets = { player: null, weapons: [], waiting: [] }
+{
+  const loader = new GLTFLoader()
+  loader.load('/models/player.glb', (g) => { assets.player = g; assets.waiting.forEach((f) => f()); assets.waiting = [] },
+    undefined, () => console.warn('player.glb missing, using placeholder bodies'))
+  WEAPON_FILES.forEach((f, i) => loader.load(`/models/${f}.glb`, (g) => {
+    assets.weapons[i] = g.scene
+    assets.waiting.forEach((fn) => fn())
+  }, undefined, () => {}))
+}
+
+function buildRig(color) {
+  const model = SkeletonUtils.clone(assets.player.scene)
+  const root = new THREE.Group()
+  // size from the skeleton (mesh bounds are unreliable for skinned models): head top -> 72 units
+  model.updateMatrixWorld(true)
+  const top = model.getObjectByName('Head_end') || model.getObjectByName('Head')
+  const headY = top ? top.getWorldPosition(new THREE.Vector3()).y : 1.8
+  model.scale.multiplyScalar(70 / headY)
+  root.add(model)
+  const tint = new THREE.Color(color)
+  model.traverse((o) => {
+    if (!o.isMesh) return
+    o.castShadow = true
+    o.frustumCulled = false
+    if (o.material.name === 'Character_Main') { o.material = o.material.clone(); o.material.color.copy(tint).multiplyScalar(0.55) }
+  })
+  const mixer = new THREE.AnimationMixer(model)
+  const act = {}
+  for (const clip of assets.player.animations) {
+    const name = clip.name.split('|').pop()
+    act[name] = mixer.clipAction(clip)
+    act[name].play()
+    act[name].weight = 0
+  }
+  if (act.Death) { act.Death.setLoop(THREE.LoopOnce); act.Death.clampWhenFinished = true }
+  if (act.Idle_Shoot) { act.Idle_Shoot.time = 0.1; act.Idle_Shoot.paused = true } // frozen = aiming stance
+  const pick = (...names) => names.find((n) => act[n])
+  const held = []
+  let heldW = -1, state = ''
+
+  function hold(w) {
+    if (!held[w] && assets.weapons[w]) {
+      const node = model.getObjectByName(HAND_NODE[w])
+      if (node) {
+        const g = new THREE.Group()
+        assets.weapons[w].traverse((o) => {
+          if (!o.isMesh) return
+          const m = new THREE.Mesh(o.geometry, o.material)
+          m.castShadow = true
+          g.add(m)
+        })
+        if (w === 4) g.rotation.z = Math.PI // this file's barrel points the other way
+        node.add(g)
+        root.updateMatrixWorld(true)
+        const size = new THREE.Box3().setFromObject(g).getSize(new THREE.Vector3())
+        g.scale.multiplyScalar(HELD_LEN[w] / Math.max(size.x, size.y, size.z))
+        held[w] = g
+      }
+    }
+    held.forEach((g, i) => { if (g) g.visible = i === w })
+    heldW = held[w] ? w : -1
+  }
+
+  return {
+    root,
+    animate(dt, r, speed) {
+      root.rotation.set(0, r.yaw, 0)
+      if (heldW !== r.w) hold(r.w)
+      let want
+      if (!r.alive) want = pick('Death')
+      else if (!r.ground) want = pick('Jump_Idle', 'Run_Gun')
+      else if (r.duck) want = pick('Duck', 'Idle_Shoot')
+      else if (speed > 40) want = pick('Run_Gun', 'Run')
+      else want = pick('Idle_Shoot', 'Idle')
+      if (want !== state) {
+        state = want
+        if (want === 'Death') { act.Death.reset(); act.Death.play() }
+      }
+      const kf = Math.min(1, dt * 12)
+      for (const n in act) act[n].weight += ((n === state ? 1 : 0) - act[n].weight) * (n === 'Death' && state === 'Death' ? 1 : kf)
+      if (act.Run_Gun) act.Run_Gun.timeScale = Math.max(0.4, speed / 230)
+      mixer.update(dt)
+    },
+  }
 }
 
 export function createActors(scene) {
@@ -46,8 +153,20 @@ export function createActors(scene) {
   function get(id) {
     let r = remotes.get(id)
     if (!r) {
-      const body = buildBody(COLORS[id % COLORS.length])
+      const color = COLORS[id % COLORS.length]
+      const body = assets.player ? buildRig(color) : buildBody(color)
       scene.add(body.root)
+      if (!assets.player) {
+        // swap the placeholder for the real model once it has loaded
+        assets.waiting.push(() => {
+          const r = remotes.get(id)
+          if (!r || !assets.player || r.rigged) return
+          scene.remove(r.body.root)
+          r.body = buildRig(color)
+          r.rigged = true
+          scene.add(r.body.root)
+        })
+      } 
       r = { id, body, buf: [], offset: null, viewTick: 0, x: 0, y: 0, z: 0, yaw: 0, pitch: 0, alive: false, duck: 0, ground: 1, w: 3,
         walk: 0, duckVis: 0, fall: 0, lastX: 0, lastZ: 0, stepDist: 0, seen: 0 }
       remotes.set(id, r)
@@ -107,18 +226,9 @@ export function createActors(scene) {
         }
         r.duckVis += (r.duck - r.duckVis) * Math.min(1, dt * 14)
         r.fall += ((r.alive ? 0 : 1) - r.fall) * Math.min(1, dt * (r.alive ? 30 : 7))
-        body.root.visible = r.alive || r.fall < 0.97
+        body.root.visible = true
         body.root.position.set(r.x, r.y, r.z)
-        body.root.rotation.set(-r.fall * Math.PI / 2, r.yaw, 0, 'YXZ')
-        const amp = r.ground ? Math.min(speed / 250, 1) * 0.75 : 0.25
-        const sw = Math.sin(r.walk) * amp
-        const crouch = r.duckVis
-        body.legL.rotation.x = sw - crouch * 1.0; body.legR.rotation.x = -sw - crouch * 0.4
-        body.legL.position.y = body.legR.position.y = 33 - crouch * 9
-        body.upper.position.y = 33 - crouch * 16
-        body.upper.rotation.x = -crouch * 0.25 + r.pitch * 0.25
-        body.head.rotation.x = r.pitch * 0.5
-        body.arms.rotation.x = r.pitch * 0.6 + crouch * 0.25
+        body.animate(dt, r, speed)
       }
     },
     viewTicks() {
