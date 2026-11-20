@@ -15,7 +15,7 @@ export const MODEL_URLS = {
   rifle: '/models/rifle.glb', sniper: '/models/sniper.glb',
 }
 export const MODEL_FIT = {
-  rifle: { dir: 'x-', len: 0.74, rear: 0.26, top: 0.085, muzzleY: 0.38 },
+  rifle: { dir: 'x-', len: 0.74, rear: 0.26, top: 0.085, muzzleY: 0.24 },
   smg: { dir: 'x-', len: 0.56, rear: 0.2, top: 0.1, muzzleY: 0.3 },
   pistol: { dir: 'x-', len: 0.19, rear: -0.1, top: 0.06, muzzleY: 0.15 },
   sniper: { dir: 'x+', len: 1.05, rear: 0.3, top: 0.14, muzzleY: 0.45 },

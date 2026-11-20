@@ -5,7 +5,9 @@
 | `models/knife.glb` | <https://poly.pizza/m/NNzzvlGXzO> | Quaternius | [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) |
 | `models/pistol.glb` | <https://poly.pizza/m/ZrdF56OKQf> | Quaternius | [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) |
 | `models/player.glb` | <https://poly.pizza/m/PpLF4rt4ah> | Quaternius | [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) |
-| `models/rifle.glb` | <https://poly.pizza/m/em1Hi9GuCv> | Quaternius | [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) |
+| `models/rifle.glb` | AI-generated, supplied by the project owner (Higgsfield export; file metadata: tripo3d.ai) | Project owner | Generator terms apply - verify before public release |
+| `models/soldier.glb` | AI-generated, supplied by the project owner (Higgsfield export, rigged in Blender) | Project owner | Generator terms apply - verify before public release |
+| `models/soldier_idle.glb`, `soldier_run.glb`, `soldier_crouch.glb`, `soldier_death.glb` | Same source as `soldier.glb` (clips: Gun_Hold_Left_Turn, Rifle_Charge_inplace, Crouch_Walk_Left_with_Gun_inplace, Shot_and_Fall_Backward) | Project owner | Generator terms apply - verify before public release |
 | `models/smg.glb` | <https://poly.pizza/m/HIlxGx1pPH> | Quaternius | [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) |
 | `models/sniper.glb` | <https://poly.pizza/m/TKaBjAEofL> | Quaternius | [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) |
 | `sounds/draw.ogg` | <https://freesound.org/people/nioczkus/sounds/377145/> | nioczkus | [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) |
@@ -40,7 +42,9 @@
 | `textures/wood/normal.jpg` | <https://polyhaven.com/a/raw_plank_wall> | Dimitrios Savva | [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) |
 | `textures/wood/roughness.jpg` | <https://polyhaven.com/a/raw_plank_wall> | Dimitrios Savva | [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) |
 
-The weapon GLBs embed palette textures derived from the original materials where needed. The soldier keeps its original rig and animation clips. Its bundled weapon attachments were removed from the visible scene.
+`rifle.glb` (AK) had a 90 degree turn baked into its vertices so its barrel points -X like the other weapon files. The `soldier_*.glb` clip files keep only the skeleton and one animation each; the mesh and textures live in `soldier.glb` alone.
+
+The other weapon GLBs embed palette textures derived from the original materials where needed. The soldier keeps its original rig and animation clips. Its bundled weapon attachments were removed from the visible scene.
 
 The sound effects were trimmed and encoded as mono Ogg Vorbis. The footsteps are four distinct cuts from one recording. The SMG uses a synthesized single-shot effect.
 
