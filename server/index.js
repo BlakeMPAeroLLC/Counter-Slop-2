@@ -28,7 +28,9 @@ const MIME = {
 }
 
 const httpServer = http.createServer((req, res) => {
-  let rel = decodeURIComponent((req.url || '/').split('?')[0])
+  let rel
+  try { rel = decodeURIComponent((req.url || '/').split('?')[0]) } catch { res.writeHead(400).end(); return }
+  if (rel.includes('\0')) { res.writeHead(400).end(); return }
   if (rel === '/') rel = '/index.html'
   const file = path.join(DIST, path.normalize(rel))
   if (!file.startsWith(DIST)) { res.writeHead(403).end(); return }
@@ -130,7 +132,10 @@ function startMatch(by) {
   // with an odd count the extra player defends: a lone attacker has better odds than a lone defender
   order.forEach((p, i) => { p.state.team = i % 2 === 0 ? TEAM.DEF : TEAM.ATT; p.wantTeam = 0 })
   G.mode = 1; G.round = 0; G.score = [0, 0, 0]; G.streak = [0, 0, 0]
-  for (const p of players.values()) { p.kills = 0; p.deaths = 0; p.survived = false; p.state.money = R.START_MONEY }
+  for (const p of players.values()) {
+    p.kills = 0; p.deaths = 0; p.survived = false; p.state.money = R.START_MONEY
+    if (p.bot) p.bot.boughtRound = -1
+  }
   events.push({ k: 'mode', m: 1 })
   startRound()
 }
@@ -149,7 +154,12 @@ function startRound() {
   const slots = [0, 0, 0]
   for (const p of players.values()) {
     const s = p.state
-    if (p.wantTeam) { s.team = p.wantTeam; p.wantTeam = 0; p.survived = false }
+    if (p.wantTeam) {
+      // re-check: other players may have switched or left since this was asked for
+      const ok = !switchBlocked(p, p.wantTeam)
+      if (ok) { s.team = p.wantTeam; p.survived = false }
+      p.wantTeam = 0
+    }
     if (!s.team) s.team = team(TEAM.ATT).length <= team(TEAM.DEF).length ? TEAM.ATT : TEAM.DEF
     if (!p.survived) loadoutPistol(p)
     s.bomb = 0; s.frz = 1
@@ -203,6 +213,7 @@ function nextRound() {
     for (const p of players.values()) {
       const s = p.state
       if (s.team) s.team = 3 - s.team
+      if (p.wantTeam) p.wantTeam = 3 - p.wantTeam
       s.money = R.START_MONEY
       p.survived = false
     }
@@ -362,7 +373,7 @@ function rewind(target, viewTick) {
 /** Apply damage. attacker may be null (bomb). w is a weapon index or -1 for the bomb. */
 function damage(victim, raw, attacker, w, part, at) {
   const s = victim.state
-  if (!s.alive) return
+  if (!s.alive || !(raw > 0)) return
   let dmg = raw
   const pen = w >= 0 ? WEAPONS[w].armorPen : 0.5
   if (s.armor > 0 && (part === 'body' || part === 'blast' || (part === 'head' && s.helmet))) {
@@ -439,7 +450,7 @@ function handleFire(shooter, e) {
 }
 
 function throwNade(p, e) {
-  nades.push({ w: e.w, owner: p.id, x: e.ox, y: e.oy, z: e.oz, vx: e.vx, vy: e.vy, vz: e.vz, at: performance.now(), acc: 0 })
+  nades.push({ w: e.w, owner: p.id, team: p.state.team, x: e.ox, y: e.oy, z: e.oz, vx: e.vx, vy: e.vy, vz: e.vz, at: performance.now(), acc: 0 })
   events.push({ k: 'throw', id: p.id, w: e.w, o: [e.ox, e.oy, e.oz], v: [e.vx, e.vy, e.vz] })
 }
 
@@ -452,7 +463,7 @@ function detonate(n) {
     for (const p of all()) {
       const s = p.state
       if (!s.alive) continue
-      if (owner && p !== owner && !hostile(owner, p)) continue
+      if (p !== owner && n.team && p.state.team === n.team) continue // no team damage
       const d = Math.hypot(s.x - n.x, s.y + 36 - n.y, s.z - n.z)
       if (d >= W.radius) continue
       const open = lineOfSight(MAP.boxes, n.x, n.y + 4, n.z, s.x, s.y + 40, s.z)
@@ -524,13 +535,42 @@ function newPlayer(ws, name, bot) {
     p.state.team = team(TEAM.ATT).length <= team(TEAM.DEF).length ? TEAM.ATT : TEAM.DEF
     p.state.money = R.START_MONEY
     loadoutPistol(p)
-    record(p)
+    if (G.phase === 'freeze') {
+      // still buy time: join this round
+      p.slot = team(p.state.team).length - 1
+      spawn(p)
+      p.state.frz = 1
+    } else record(p)
   }
   rosterDirty = true
   return p
 }
 
+/** Team sizes once everyone's pending switch has happened. */
+function plannedSizes() {
+  const n = [0, 0, 0]
+  for (const o of players.values()) n[o.wantTeam || o.state.team]++
+  return n
+}
+/** Reason a switch to team `to` would break the match, or '' if it is fine. */
+function switchBlocked(p, to) {
+  const n = plannedSizes()
+  const from = p.wantTeam || p.state.team
+  n[from]--; n[to]++
+  if (n[from] === 0) return 'You are the last one on your team, so you cannot switch.'
+  if (n[to] - n[from] > 1) return 'That would make the teams uneven.'
+  return ''
+}
+
 const botList = () => all().filter((p) => p.bot)
+function removeBotAny() {
+  const p = botList().pop()
+  if (!p) return
+  if (p.state.bomb) dropBomb(p.state)
+  players.delete(p.id)
+  rosterDirty = true
+  say(`${p.name} left to make room`)
+}
 function addBot(by) {
   if (players.size >= MAX_PLAYERS) { say('The server is full.', by); return }
   const used = new Set(all().map((p) => p.name))
@@ -539,7 +579,13 @@ function addBot(by) {
   say(`${name} joined (${SKILLS[botSkill]})`)
 }
 function removeBot() {
-  const p = botList().pop()
+  const bots = botList()
+  let p = bots[bots.length - 1]
+  if (G.mode === 1) {
+    // take from the bigger team, and never empty a team
+    const n = [0, team(1).length, team(2).length]
+    p = bots.filter((b) => n[b.state.team] > 1).sort((a, b) => n[b.state.team] - n[a.state.team])[0]
+  }
   if (!p) return
   if (p.state.bomb) dropBomb(p.state)
   players.delete(p.id)
@@ -553,8 +599,13 @@ wss.on('connection', (ws) => {
   ws.on('message', (raw) => {
     let m
     try { m = JSON.parse(raw) } catch { return }
+    if (!m || typeof m !== 'object') return
     if (m.t === 'j' && !p) {
-      if (players.size >= MAX_PLAYERS) { ws.send(JSON.stringify({ t: 'full' })); ws.close(); return }
+      if (players.size >= MAX_PLAYERS) {
+        // a bot gives up its slot for a person
+        if (botList().length) removeBotAny()
+        else { ws.send(JSON.stringify({ t: 'full' })); ws.close(); return }
+      }
       const name = String(m.name || 'Player').replace(/[^\w \-]/g, '').slice(0, 16) || 'Player'
       p = newPlayer(ws, name, null)
       ws.send(JSON.stringify({ t: 'w', id: p.id, map: MAP.name }))
@@ -572,8 +623,8 @@ wss.on('connection', (ws) => {
         if (p.credit < 1) break
         p.credit -= 1
         p.lastSeq = c[0]
-        const yaw = Number(c[2]) || 0
-        const pitch = Math.min(Math.max(Number(c[3]) || 0, -1.56), 1.56)
+        const yaw = Number.isFinite(+c[2]) ? +c[2] % (Math.PI * 2) : 0
+        const pitch = Number.isFinite(+c[3]) ? Math.min(Math.max(+c[3], -1.56), 1.56) : 0
         runCmd(p, { b: c[1] | 0, yaw, pitch, sel: c[4] | 0 })
       }
     } else if (m.t === 'buy') {
@@ -583,9 +634,11 @@ wss.on('connection', (ws) => {
       else if (m.m === 0 && G.mode === 1) toDeathmatch(`${p.name} ended the match`)
     } else if (m.t === 'team') {
       if (G.mode !== 1) return
-      const cur = p.wantTeam || p.state.team
-      p.wantTeam = 3 - cur === p.state.team ? 0 : 3 - cur
-      say(p.wantTeam ? 'You will switch teams next round.' : 'Team switch cancelled.', p)
+      if (p.wantTeam) { p.wantTeam = 0; say('Team switch cancelled.', p); rosterDirty = true; return }
+      const why = switchBlocked(p, 3 - p.state.team)
+      if (why) { say(why, p); return }
+      p.wantTeam = 3 - p.state.team
+      say('You will switch teams next round.', p)
       rosterDirty = true
     } else if (m.t === 'bot') {
       if (m.op === 'add') addBot(p)
@@ -621,7 +674,7 @@ setInterval(() => {
   const dtMs = Math.min(now - lastLoop, 100)
   lastLoop = now
   if (G.mode === 0) {
-    for (const p of players.values()) if (!p.state.alive && p.respawnAt && now >= p.respawnAt) spawn(p)
+    for (const p of players.values()) if (!p.state.alive && p.respawnAt && now >= p.respawnAt) { loadoutDM(p); spawn(p) }
   } else tickBombMode(now)
   tickNades(now, dtMs)
   for (let i = smokes.length - 1; i >= 0; i--) if (now >= smokes[i].until) smokes.splice(i, 1)

@@ -41,6 +41,10 @@ function buildBody(color) {
   return {
     root,
     setColor(c) { cloth.color.set(c) },
+    dispose() {
+      root.traverse((o) => { if (o.isMesh) o.geometry.dispose() })
+      for (const m of [cloth, dark, skin, gunM]) m.dispose()
+    },
     animate(dt, r, speed) {
       root.rotation.set(-r.fall * Math.PI / 2, r.yaw, 0, 'YXZ')
       const amp = r.ground ? Math.min(speed / 250, 1) * 0.75 : 0.25
@@ -179,6 +183,8 @@ function buildRig(key, color) {
 
   return {
     root, setColor, key,
+    // geometry is shared with the loaded file; only the per-player tinted materials are ours
+    dispose() { for (const m of tinted) m.dispose(); mixer.stopAllAction() },
     animate(dt, r, speed) {
       if (heldW !== r.w) hold(r.w)
       let want
@@ -224,6 +230,7 @@ export function createActors(scene) {
     const key = charFor(r.team)
     if (!key || r.body.key === key) return
     scene.remove(r.body.root)
+    r.body.dispose()
     r.body = buildRig(key, 0x777777)
     r.colorKey = -1
     scene.add(r.body.root)
@@ -239,15 +246,20 @@ export function createActors(scene) {
         const r = get(a[0])
         r.team = a[10] || 0
         const last = r.buf[r.buf.length - 1]
-        if (last && a[1] <= last.tick) continue
-        r.buf.push({ tick: a[1], x: a[2], y: a[3], z: a[4], yaw: a[5], pitch: a[6], flags: a[7], w: a[8], tp: a[9] })
+        const row = { tick: a[1], x: a[2], y: a[3], z: a[4], yaw: a[5], pitch: a[6], flags: a[7], w: a[8], tp: a[9] }
+        if (last && a[1] <= last.tick) {
+          // their clock has not moved (paused tab, alt-tab), but the server changed them anyway
+          if (a[1] === last.tick && (last.tp !== row.tp || last.flags !== row.flags || last.x !== row.x || last.z !== row.z || last.w !== row.w)) r.buf[r.buf.length - 1] = row
+          continue
+        }
+        r.buf.push(row)
         if (r.buf.length > 64) r.buf.shift()
         // map this player's command clock onto our clock; follow the least-delayed packets
         const sample = a[1] * 1000 / TICK - now
         if (r.offset === null || sample > r.offset || sample < r.offset - 500) r.offset = sample
         else r.offset += (sample - r.offset) * 0.02
       }
-      for (const [id, r] of remotes) if (!live.has(id)) { scene.remove(r.body.root); remotes.delete(id) }
+      for (const [id, r] of remotes) if (!live.has(id)) { scene.remove(r.body.root); r.body.dispose(); remotes.delete(id) }
     },
     update(dt, now, onStep) {
       for (const r of remotes.values()) {
@@ -473,10 +485,10 @@ export function createEffects(scene, world) {
     },
     nadeRemove(owner, w) {
       const i = nades.findIndex((n) => n.owner === owner && n.w === w)
-      if (i >= 0) { scene.remove(nades[i].mesh); nades.splice(i, 1) }
+      if (i >= 0) { scene.remove(nades[i].mesh); nades[i].mesh.material.dispose(); nades.splice(i, 1) }
     },
     clearRound() {
-      for (const n of nades) scene.remove(n.mesh)
+      for (const n of nades) { scene.remove(n.mesh); n.mesh.material.dispose() }
       nades.length = 0
       for (const s of smokes) { scene.remove(s.g); for (const p of s.puffs) p.m.dispose() }
       smokes.length = 0
@@ -525,7 +537,7 @@ export function createEffects(scene, world) {
         if ((e.n.bounces || 0) > e.seen) { e.seen = e.n.bounces; onBounce(e.n) }
         e.mesh.position.set(e.n.x, e.n.y + 3, e.n.z)
         e.mesh.rotation.x += dt * 9
-        if (e.age > 4) { scene.remove(e.mesh); nades.splice(i, 1) }
+        if (e.age > 4) { scene.remove(e.mesh); e.mesh.material.dispose(); nades.splice(i, 1) }
       }
 
       const life = SMOKE_MS / 1000

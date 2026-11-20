@@ -8,7 +8,7 @@
     "build": "vite build",
     "start": "vite build && node server/index.js",
     "serve": "node server/index.js",
-    "test": "node --test test/*.test.js"
+    "test": "node --test --test-concurrency=1 test/*.test.js"
   },
   "dependencies": {
     "three": "^0.170.0",

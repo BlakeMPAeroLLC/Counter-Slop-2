@@ -106,3 +106,31 @@ test('one player plus one bot can play a bomb round, and the attacking bot wins 
     H.stop()
   } finally { srv.kill() }
 })
+
+test('a defending bot reaches and defuses a bomb on the ground, on crates and on a ledge', async () => {
+  const { think, createBotState } = await import('../server/bots.js')
+  const nav = buildNav(MAP)
+  const cases = [
+    ['ground on A', { x: -900, y: 0.05, z: -780 }],
+    ['60-high crate on A', { x: -980, y: 60, z: -730 }],
+    ['64-high crate on A (needs the step crate)', { x: -898, y: 64, z: -868 }],
+    ['80-high ledge on B (needs the step crate)', { x: 1100, y: 80, z: -1200 }],
+  ]
+  for (const [name, bomb] of cases) {
+    const world = { boxes: MAP.boxes, dyn: [], sites: MAP.sites, bomb }
+    const me = { id: 1, state: createState(), bot: createBotState(1) }
+    const s = me.state
+    s.own = 3; s.team = TEAM.DEF; s.kit = 1
+    spawnState(s, MAP.spawns.def[0])
+    const G = { mode: 1, phase: 'live', round: 2, bomb: { st: 3, ...bomb, explodeAt: 1e9 }, botSite: 0 }
+    let now = 0, done = false
+    for (let it = 0; it < 64 * 40 && !done; it++) {
+      now += 1000 / 64
+      const ctx = { now, dt: 1 / 64, players: [me], byId: new Map([[1, me]]), G, boxes: MAP.boxes, sites: MAP.sites, nav, intel: [null, null, null], smokes: [], roam: MAP.spawns.dm }
+      const c = think(me.bot, me, ctx)
+      for (let k = 0; k < 2; k++) { step(s, c, world, null); c.sel = -1 }
+      if (s.act === 2 && s.actT >= 5 * TICK) done = true
+    }
+    assert.ok(done, `${name}: never finished defusing (ended at ${s.x.toFixed(0)},${s.y.toFixed(0)},${s.z.toFixed(0)})`)
+  }
+})

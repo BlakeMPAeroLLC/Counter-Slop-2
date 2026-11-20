@@ -135,10 +135,53 @@ export function createBotState(skill) {
     target: 0, reactAt: 0, lastSeen: null, head: false,
     errY: 0, errP: 0, errUntil: 0, burstUntil: 0, pauseUntil: 0, strafe: 1,
     spot: null, spotUntil: 0, spotSite: -1, holdSite: 0, rotateAt: 0, watchK: 0, watchUntil: 0,
-    stuckAt: 0, stuckX: 0, stuckZ: 0, unstuckUntil: 0, unDir: 0, jumpNext: false,
+    stuckAt: 0, stuckX: 0, stuckZ: 0, unstuckUntil: 0, unDir: 0, jumpNext: false, climbUntil: 0, reachUntil: 0, reachPhase: 1, reachAng: 0,
     alertYaw: 0, alertUntil: 0, blindUntil: 0,
     boughtRound: -1, wantBuy: [],
   }
+}
+
+const inBox = (b, x, z, m = 0) => x >= b.x0 - m && x <= b.x1 + m && z >= b.z0 - m && z <= b.z1 + m
+const clampIn = (v, a, b) => Math.min(Math.max(v, a), b)
+
+/**
+ * How to get up to something at height t.y standing on a crate or ledge. Returns the point to
+ * land on and a point to take a run-up from, or null. If the object is too high for one
+ * crouch-jump (about 62 units), it uses a lower box beside it as a step.
+ */
+export function climbPlan(boxes, fromY, t) {
+  const support = boxes.find((b) => b.y0 < 1 && Math.abs(b.y1 - t.y) < 3 && inBox(b, t.x, t.z, 1))
+  if (!support) return null
+  const plan = (b, aim) => {
+    // land on box b as close to `aim` as possible; run up from outside, straight across an edge,
+    // along a line with room to spare on both sides
+    const px = clampIn(aim.x, b.x0 + 18, b.x1 - 18), pz = clampIn(aim.z, b.z0 + 18, b.z1 - 18)
+    const cx = (b.x0 + b.x1) / 2, cz = (b.z0 + b.z1) / 2
+    let best = null, bd = Infinity
+    for (const f of [0, 0.5, 1]) {
+      const x = px + (cx - px) * f, z = pz + (cz - pz) * f
+      for (const [ex, ez, nx, nz] of [[b.x0 - 1, z, -1, 0], [b.x1 + 1, z, 1, 0], [x, b.z0 - 1, 0, -1], [x, b.z1 + 1, 0, 1]]) {
+        const rx = ex + nx * 90, rz = ez + nz * 90
+        let clear = true
+        for (let k = 0; k <= 8 && clear; k++) {
+          const qx = rx + (ex - rx) * k / 8, qz = rz + (ez - rz) * k / 8
+          if (boxes.some((o) => o !== b && o.y1 > fromY + 18 && o.y0 < fromY + 72 && inBox(o, qx, qz, 22))) clear = false
+        }
+        if (!clear) continue
+        const d = Math.hypot(x - aim.x, z - aim.z) * 2 + Math.hypot(rx - aim.x, rz - aim.z) * 0.1
+        if (d < bd) { bd = d; best = { runX: rx, runZ: rz, x, z } }
+      }
+    }
+    return best
+  }
+  if (support.y1 - fromY <= 60) return plan(support, t)
+  // too tall: find a step next to it that is low enough to jump on and high enough to reach from
+  for (const b of boxes) {
+    if (b === support || b.y0 > 1 || b.y1 - fromY > 60 || b.y1 - fromY < 20 || support.y1 - b.y1 > 44) continue
+    const touching = b.x0 <= support.x1 + 4 && b.x1 >= support.x0 - 4 && b.z0 <= support.z1 + 4 && b.z1 >= support.z0 - 4
+    if (touching) { const p = plan(b, t); if (p) return p }
+  }
+  return null
 }
 
 /** True if a smoke cloud sits on the sight line a -> b (top-down test). */
@@ -221,7 +264,7 @@ export function think(bot, me, ctx) {
   } else bot.target = 0
 
   // ---- objective: where to go, whether to hold E, where to look when idle
-  let goal = null, use = false, face = null
+  let goal = null, use = false, face = null, reach = null, direct = null
   if (G.mode === 1 && G.bomb && (G.phase === 'live' || G.phase === 'freeze')) {
     const b = G.bomb
     if (G.phase === 'freeze') buyPlan(bot, s, G.round)
@@ -245,6 +288,9 @@ export function think(bot, me, ctx) {
         if (there && (!tgt || s.actT > RULES.PLANT_TICKS * 0.5)) use = true
       } else if (b.st === 2) {
         goal = { x: b.x, z: b.z }
+        const hd = Math.hypot(b.x - s.x, b.z - s.z)
+        if (b.y - s.y > 30 && hd < 300) reach = b
+        else if (b.y > 20 && Math.abs(b.y - s.y) < 30 && hd < 160) direct = b
       } else {
         const c = ctx.byId.get(b.carrier)
         if (c && !c.bot) {
@@ -265,9 +311,12 @@ export function think(bot, me, ctx) {
         goal = { x: b.x, z: b.z }
         const total = s.kit ? RULES.DEFUSE_KIT_TICKS : RULES.DEFUSE_TICKS
         const need = (total - s.actT) / total * (s.kit ? 5000 : 10000)
-        const near = Math.hypot(b.x - s.x, b.z - s.z) < RULES.DEFUSE_RANGE - 14
+        const hd = Math.hypot(b.x - s.x, b.z - s.z)
+        const inRange = s.ground && hd < RULES.DEFUSE_RANGE - 10 && Math.abs(b.y - s.y) < 44
         // fight first unless the clock says there is no time for that
-        if (near && (!tgt || b.explodeAt - now < need + 3500)) use = true
+        if (inRange) { if (!tgt || b.explodeAt - now < need + 3500) use = true }
+        else if (b.y - s.y > 30 && hd < 300) reach = b // it is up on something: climb first
+        else if (b.y > 20 && Math.abs(b.y - s.y) < 30 && hd < 160) direct = b // up there with it: walk over carefully
       } else {
         const intel = ctx.intel[TEAM.DEF]
         if (intel && now - intel.t < 4000 && now > bot.rotateAt) {
@@ -335,7 +384,35 @@ export function think(bot, me, ctx) {
       else bot.strafe = -bot.strafe
     }
   } else {
-    if (!use && goal) {
+    if (direct) {
+      // on a crate or ledge (off the ground grid): walk straight at it, slowly, to not overshoot
+      const dx = direct.x - s.x, dz = direct.z - s.z, d = Math.hypot(dx, dz) || 1
+      if (d > 8) { mx = dx / d; mz = dz / d; moving = true }
+    } else if (reach) {
+      // The ground grid cannot route onto boxes, so climb by hand: go to a run-up point,
+      // then run at the landing spot and crouch-jump as the edge comes up.
+      const p = climbPlan(ctx.boxes, s.y, reach)
+      let tx = reach.x, tz = reach.z
+      if (p) {
+        // phase 1: get to the run-up point. phase 0: run from there and jump. Retry if it fails.
+        const key = p.x + ',' + p.z
+        if (bot.reachKey !== key) { bot.reachKey = key; bot.reachPhase = 1 }
+        const atRun = Math.hypot(p.runX - s.x, p.runZ - s.z) < 36
+        if (bot.reachPhase === 1 && atRun && s.ground) { bot.reachPhase = 0; bot.reachUntil = now + 1800 }
+        else if (bot.reachPhase === 0 && now > bot.reachUntil && s.ground) bot.reachPhase = 1
+        if (bot.reachPhase === 1) {
+          const st = nav.steer(s.x, s.z, p.runX, p.runZ)
+          if (st) { tx = s.x + st.dx * 100; tz = s.z + st.dz * 100 } else { tx = p.runX; tz = p.runZ }
+        } else { tx = p.x; tz = p.z }
+      }
+      const dx = tx - s.x, dz = tz - s.z, d = Math.hypot(dx, dz) || 1
+      mx = dx / d; mz = dz / d; moving = true
+      // jump with a run-up as an edge comes up, not standing against it (air control is weak)
+      if (bot.reachPhase === 0 && s.ground && now > bot.climbUntil && Math.hypot(s.vx, s.vz) > 120 &&
+          hullBlocked({ boxes: ctx.boxes }, s.x + mx * 34, s.y + 0.05, s.z + mz * 34, 16, 72)) {
+        bot.climbUntil = now + 650; bot.jumpNext = true
+      }
+    } else if (!use && goal) {
       const st = nav.steer(s.x, s.z, goal.x, goal.z)
       if (st && st.dist > 30) { mx = st.dx; mz = st.dz; moving = true }
     }
@@ -358,8 +435,8 @@ export function think(bot, me, ctx) {
     const fd = -mx * sy - mz * cy, rd = mx * cy - mz * sy
     if (fd > 0.38) b |= BTN.F; else if (fd < -0.38) b |= BTN.B
     if (rd > 0.38) b |= BTN.R; else if (rd < -0.38) b |= BTN.L
-    // not getting anywhere? sidestep and hop
-    if (now - bot.stuckAt > 900) {
+    // not getting anywhere? sidestep and hop (not while lining up a climb: hops kill the run-up)
+    if (!reach && now - bot.stuckAt > 900) {
       if (Math.hypot(s.x - bot.stuckX, s.z - bot.stuckZ) < 14) {
         bot.unstuckUntil = now + 450
         bot.unDir = Math.random() < 0.5 ? BTN.L : BTN.R
@@ -368,10 +445,10 @@ export function think(bot, me, ctx) {
       bot.stuckAt = now; bot.stuckX = s.x; bot.stuckZ = s.z
     }
   } else { bot.stuckAt = now; bot.stuckX = s.x; bot.stuckZ = s.z }
-  if (now < bot.unstuckUntil) {
-    b |= bot.unDir
-    if (bot.jumpNext) { b |= BTN.JUMP; bot.jumpNext = false }
-  }
+  if (now < bot.unstuckUntil) b |= bot.unDir
+  if (bot.jumpNext && s.ground) { b |= BTN.JUMP; bot.jumpNext = false }
+  else if (now < bot.climbUntil && !s.ground) b |= BTN.DUCK // crouch in the air to clear the edge
+  if (direct && moving) b |= BTN.WALK
   if (fire) b |= BTN.FIRE
   if (use) b |= BTN.USE
   if (!tgt && W.mag > 0 && s.ammo[s.w] < W.mag * 0.4 && !s.reloadEnd) b |= BTN.RELOAD

@@ -203,3 +203,47 @@ test('combat rules: rifles shoot through a crate at half damage, pistols do not,
     A.stop(); B.stop()
   } finally { srv.kill() }
 })
+
+test('hardening: bad messages and URLs do not crash the server, broken angles do not kill anyone, team switches stay fair', async () => {
+  const http = await import('node:http')
+  const srv = serve(3222, { SPAWNS: '[[-1000,700],[1000,700],[0,-1000]]', RULES: JSON.stringify({ FREEZE_MS: 300, END_MS: 300, ROUND_MS: 2500 }) })
+  let exited = false
+  srv.on('exit', () => { exited = true })
+  const open = []
+  try {
+    await sleep(700)
+    const get = (p) => new Promise((r) => { const q = http.get(`http://127.0.0.1:3222${p}`, (res) => { res.resume(); r(res.statusCode) }); q.on('error', () => r(0)) })
+    assert.equal(await get('/%'), 400)
+    assert.equal(await get('/a%00b'), 400)
+    const raw = new WebSocket('ws://127.0.0.1:3222')
+    open.push({ stop: () => raw.close() })
+    await new Promise((r) => raw.on('open', r))
+    for (const m of ['null', '1', '"x"', '[]', '{"t":"c","c":[null,[1]]}']) raw.send(m)
+    await sleep(300)
+    assert.equal(exited, false, 'server survived malformed messages')
+
+    const A = bot(3222, 'A'), B = bot(3222, 'B'), C = bot(3222, 'C')
+    open.push(A, B, C)
+    await sleep(900)
+    // A throws an HE grenade with an infinite yaw (JSON 1e999)
+    A.sel = 5
+    await sleep(700)
+    let q = 1e6
+    const cmd = (b) => `[${++q},${b},1e999,0,-1]`
+    A.ws.send(`{"t":"c","v":{},"c":[${cmd(BTN.FIRE)},${cmd(0)}]}`)
+    await sleep(2500)
+    assert.ok(!A.events.some((e) => e.k === 'kill'), 'nobody died from a broken grenade')
+    assert.equal(B.state.alive, 1); assert.equal(C.state.alive, 1)
+
+    // team switching cannot empty a team
+    C.stop()
+    await sleep(300)
+    A.say({ t: 'mode', m: 1 })
+    await until(() => A.g.m === 1 && A.state.team && B.state.team, 2000, 'match start')
+    A.say({ t: 'team' })
+    await until(() => A.msgs.some((m) => m.t === 'm' && /last one/.test(m.text)), 2000, 'switch refused')
+    await until(() => A.g.r === 2 && A.g.ph === 'live', 8000, 'next round')
+    assert.equal(A.g.m, 1, 'the match is still on')
+    assert.notEqual(A.state.team, B.state.team)
+  } finally { for (const o of open) o.stop(); srv.kill() }
+})
