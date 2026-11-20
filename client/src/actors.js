@@ -76,6 +76,13 @@ const CHARS = {
   // face: extra turn so the model looks where the player looks. weapon: how a held gun sits in the hand.
   attacker: { face: Math.PI, weapon: { rot: [0, Math.PI / 2, 0], pos: [0, 0, 0] } },
   defender: { face: Math.PI, weapon: { rot: [0, Math.PI / 2, 0], pos: [0, 0, 0] } },
+  // soldier: the masked operator used by every team unless attacker/defender files exist.
+  // tintMix: how far the whole texture is tinted toward the team / player colour.
+  // Its idle clip turns the body around halfway through, so it is frozen on an early frame;
+  // the crouch clip is a crouch-walk, so it only plays while moving (stepFeet).
+  // weapon.rot / weapon.roles were solved per clip so the barrel points where the soldier faces.
+  soldier: { face: Math.PI, tintMix: 0.35, freeze: { idle: 0.3 }, stepFeet: ['crouch'],
+    weapon: { rot: [2.937, -1.126, 1.304], pos: [0, 0, 0], roles: { run: [-0.878, -0.22, 2.8], crouch: [2.87, -1.003, 1.244] } } },
 }
 const assets = { chars: {}, weapons: [], waiting: [] }
 const ready = () => { const w = assets.waiting; assets.waiting = []; w.forEach((f) => f()) }
@@ -110,6 +117,7 @@ const ready = () => { const w = assets.waiting; assets.waiting = []; w.forEach((
 function charFor(team) {
   if (team === 1 && assets.chars.attacker) return 'attacker'
   if (team === 2 && assets.chars.defender) return 'defender'
+  if (assets.chars.soldier) return 'soldier'
   return assets.chars.player ? 'player' : null
 }
 
@@ -139,9 +147,15 @@ function buildRig(key, color) {
     if (!o.isMesh) return
     o.castShadow = true
     o.frustumCulled = false
-    if (cfg.tint && o.material.name === cfg.tint) { o.material = o.material.clone(); tinted.push(o.material) }
+    if ((cfg.tint && o.material.name === cfg.tint) || cfg.tintMix) { o.material = o.material.clone(); tinted.push(o.material) }
   })
-  const setColor = (c) => { for (const m of tinted) m.color.set(c).multiplyScalar(0.6) }
+  const white = new THREE.Color(1, 1, 1)
+  const setColor = (c) => {
+    for (const m of tinted) {
+      if (cfg.tintMix) m.color.copy(white).lerp(new THREE.Color(c), cfg.tintMix)
+      else m.color.set(c).multiplyScalar(0.6)
+    }
+  }
   setColor(color)
   const mixer = new THREE.AnimationMixer(model)
   const act = {}
@@ -156,6 +170,13 @@ function buildRig(key, color) {
   if (act.death) { act.death.setLoop(THREE.LoopOnce); act.death.clampWhenFinished = true }
   const held = []
   let heldW = -1, state = '', fallT = 0
+  // per-animation hand angle for the held gun (rigs whose grip differs between clips)
+  const gunQ = {}
+  if (cfg.weapon && cfg.weapon.roles) {
+    gunQ.idle = new THREE.Quaternion().setFromEuler(new THREE.Euler(...cfg.weapon.rot))
+    for (const [role, rot] of Object.entries(cfg.weapon.roles)) gunQ[role] = new THREE.Quaternion().setFromEuler(new THREE.Euler(...rot))
+  }
+  const tmpQ = new THREE.Quaternion()
 
   function hold(w) {
     if (!held[w] && assets.weapons[w]) {
@@ -169,7 +190,12 @@ function buildRig(key, color) {
           g.add(m)
         })
         if (cfg.hands) { if (w === 4) g.rotation.z = Math.PI } // this file's barrel points the other way
-        else if (cfg.weapon) { g.rotation.set(...cfg.weapon.rot); g.position.set(...cfg.weapon.pos) }
+        else if (cfg.weapon) {
+          g.rotation.set(...cfg.weapon.rot); g.position.set(...cfg.weapon.pos)
+          // sniper.glb's barrel points +X, the others -X
+          g.userData.flip = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), w === 4 ? Math.PI : 0)
+          g.quaternion.multiply(g.userData.flip)
+        }
         node.add(g)
         root.updateMatrixWorld(true)
         const size = new THREE.Box3().setFromObject(g).getSize(new THREE.Vector3())
@@ -204,6 +230,9 @@ function buildRig(key, color) {
       const kf = Math.min(1, dt * 12)
       for (const n in act) act[n].weight += ((n === state ? 1 : 0) - act[n].weight) * (n === 'death' && state === 'death' ? 1 : kf)
       if (act.run) act.run.timeScale = Math.max(0.4, speed / 230)
+      if (cfg.stepFeet) for (const n of cfg.stepFeet) if (act[n]) act[n].timeScale = Math.min(1, speed / 60)
+      const g = held[heldW], q = gunQ[state] || gunQ.idle
+      if (g && q && state !== 'death') g.quaternion.slerp(tmpQ.copy(q).multiply(g.userData.flip), kf)
       mixer.update(dt)
       if (headB) headB.scale.copy(headBase).multiplyScalar(cfg.headScale)
     },
